@@ -8,6 +8,10 @@ This script demonstrates:
 4. Inference on a test sample
 """
 
+import json
+import os
+import shutil
+
 from tqdm import tqdm
 import torch
 import torch.nn as nn
@@ -16,6 +20,25 @@ from torch.utils.data import DataLoader
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 from whipstr.whipstr_encoder import WhipstrEncoder
 from whipstr.whipstr_transformer import WhipstrTransformer
+
+
+def save_vocab(vocab_list, path):
+    """Save vocabulary to a model.json file."""
+    with open(path, 'w') as f:
+        json.dump({"Vocab": vocab_list}, f, indent=2)
+
+
+def save_checkpoint(encoder, transformer, optimizer, epoch, val_accuracy, save_dir, vocab_list):
+    """Save model checkpoint and vocab to the given directory."""
+    os.makedirs(save_dir, exist_ok=True)
+    torch.save({
+        'epoch': epoch,
+        'encoder_state_dict': encoder.state_dict(),
+        'transformer_state_dict': transformer.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'val_accuracy': val_accuracy,
+    }, os.path.join(save_dir, 'checkpoint.pt'))
+    save_vocab(vocab_list, os.path.join(save_dir, 'model.json'))
 
 
 def solution_string_to_tensor(solution_strings, char_to_idx, device):
@@ -98,6 +121,12 @@ def main():
     print(f"   Vocabulary size: {vocab_size}")
     print(f"   Characters: {sorted(all_chars)}")
     
+    # Save vocabulary to models/model.json
+    vocab_list = sorted(all_chars)
+    os.makedirs('models', exist_ok=True)
+    save_vocab(vocab_list, 'models/model.json')
+    print(f"   Vocabulary saved to models/model.json")
+    
     # Show a sample
     sample_image, sample_solution = dataset[0]
     print(f"\n   Sample from dataset:")
@@ -168,6 +197,9 @@ def main():
     # Step 5: Training loop
     print(f"\n6. Training for {num_epochs} Epochs")
     print("   " + "-" * 56)
+    
+    best_val_accuracy = -1.0
+    recent_epoch_dirs = []  # track the 2 most recent epoch checkpoint dirs
     
     for epoch in range(num_epochs):
         # Training
@@ -253,6 +285,25 @@ def main():
               f"Train Loss={avg_train_loss:.4f}, "
               f"Val Loss={avg_val_loss:.4f}, "
               f"Val Acc={val_accuracy:.4f}")
+        
+        # --- Checkpointing ---
+        # Best model by val_accuracy
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
+            save_checkpoint(encoder, transformer, optimizer, epoch + 1,
+                            val_accuracy, 'models/best', vocab_list)
+            print(f"   ✓ New best model saved (val_acc={val_accuracy:.4f})")
+        
+        # Most recent epoch checkpoint (keep only 2)
+        epoch_dir = f'models/epoch_{epoch + 1}'
+        save_checkpoint(encoder, transformer, optimizer, epoch + 1,
+                        val_accuracy, epoch_dir, vocab_list)
+        recent_epoch_dirs.append(epoch_dir)
+        if len(recent_epoch_dirs) > 2:
+            old_dir = recent_epoch_dirs.pop(0)
+            if os.path.exists(old_dir):
+                shutil.rmtree(old_dir)
+            print(f"   Removed old checkpoint: {old_dir}")
     
     print("   " + "-" * 56)
     print("   Training complete!")
