@@ -8,6 +8,7 @@ This script demonstrates:
 4. Inference on a test sample
 """
 
+import argparse
 import json
 import os
 import shutil
@@ -79,6 +80,11 @@ def collate_fn(batch):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Whipstr STT (ASR) - TSV Speech Example")
+    parser.add_argument('--continue-pt', type=str, default=None,
+                        help='Path to a .pt checkpoint file to resume training from')
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Whipstr STT (ASR) - TSV Speech Example")
     print("=" * 60)
@@ -194,14 +200,47 @@ def main():
     print(f"   Learning rate: {learning_rate}")
     print(f"   Loss function: CrossEntropyLoss")
     
+    # Load checkpoint if --continue-pt was provided
+    start_epoch = 0
+    best_val_accuracy = -1.0
+
+    if args.continue_pt:
+        print(f"\n6. Loading checkpoint from {args.continue_pt}")
+        checkpoint = torch.load(args.continue_pt, map_location=device)
+        encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        transformer.load_state_dict(checkpoint['transformer_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint.get('epoch', 0)
+        print(f"   Resumed from epoch {start_epoch}")
+
+        # Evaluate to determine best_val_accuracy baseline
+        print(f"   Evaluating checkpoint to establish baseline accuracy...")
+        encoder.eval()
+        transformer.eval()
+        total_correct = 0
+        total_chars = 0
+        with torch.no_grad():
+            for images, solution_strings in tqdm(val_loader, desc="   Baseline eval"):
+                images = images.to(device)
+                targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
+                batch_size_actual, seq_len = targets.shape
+                encoder_tokens = encoder(images)
+                start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
+                decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
+                logits = transformer(encoder_tokens, decoder_input)
+                predictions = torch.argmax(logits, dim=-1)
+                total_correct += (predictions == targets).sum().item()
+                total_chars += batch_size_actual * seq_len
+        best_val_accuracy = total_correct / max(total_chars, 1)
+        print(f"   Baseline val_accuracy: {best_val_accuracy:.4f}")
+
     # Step 5: Training loop
-    print(f"\n6. Training for {num_epochs} Epochs")
+    print(f"\n{'7' if args.continue_pt else '6'}. Training for epochs {start_epoch + 1}–{num_epochs}")
     print("   " + "-" * 56)
     
-    best_val_accuracy = -1.0
     recent_epoch_dirs = []  # track the 2 most recent epoch checkpoint dirs
     
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         # Training
         encoder.train()
         transformer.train()
@@ -308,8 +347,8 @@ def main():
     print("   " + "-" * 56)
     print("   Training complete!")
     
-    # Step 6: Inference on a test sample
-    print(f"\n7. Inference on Test Sample")
+    # Step: Inference on a test sample
+    print(f"\n{'8' if args.continue_pt else '7'}. Inference on Test Sample")
     
     encoder.eval()
     transformer.eval()
