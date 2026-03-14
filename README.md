@@ -25,13 +25,13 @@ requirements.txt                  # Dependencies
 
 ## Usage
 
-See `example.py` for usage examples.
+See `stt_example.py` for usage examples.
 
 ## Training
 
 ```bash
 # Quick training example
-python example.py
+python stt_example.py
 
 # Full training with improved hyperparameters
 python train_improved.py
