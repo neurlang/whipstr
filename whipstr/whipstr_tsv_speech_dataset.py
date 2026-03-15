@@ -56,10 +56,9 @@ class WhipstrTSVSpeechDataset(Dataset):
                 if all_chars is not None:
                     all_chars.update(transcription)
                 
-                self.samples.append((flac_path, transcription))
                 self.limit -= 1
-                if self.limit <= 0:
-                    break
+                if self.limit >= 0:
+                    self.samples.append((flac_path, transcription))
         
         if len(self.samples) == 0:
             raise ValueError(f"No valid samples found in TSV file: {tsv_path}")
