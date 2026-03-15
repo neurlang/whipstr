@@ -42,9 +42,9 @@ class WhipstrTSVSpeechDataset(Dataset):
                 parts = []
                 if '\t' in line:
                     parts = line.split('\t')
-                if ',' in line:
+                elif ',' in line:
                     parts = line.split(',')
-                if '|' in line:
+                elif '|' in line:
                     parts = line.split('|')
                 if len(parts) != 2:
                     raise ValueError(f"Invalid TSV line format (expected 2 columns): {line}")
