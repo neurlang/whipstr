@@ -195,7 +195,7 @@ class WhipstrTransformer(nn.Module):
             else:
                 raise RuntimeError(f"Error during transformer forward pass: {str(e)}") from e
     
-    def generate(self, encoder_tokens, max_length):
+    def generate(self, encoder_tokens, max_length, start_token):
         """Auto-regressive generation for inference.
         
         Args:
@@ -221,7 +221,7 @@ class WhipstrTransformer(nn.Module):
         encoder_memory = self.transformer_encoder(encoder_out)
         
         # Initialize with start token
-        generated = torch.full((batch_size, 1), 0, dtype=torch.long, device=device)
+        generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
         
         # Generate tokens one at a time
         for _ in range(max_length):

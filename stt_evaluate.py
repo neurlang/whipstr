@@ -100,7 +100,8 @@ def main():
             encoder_tokens = encoder(image_batch)
             predictions = transformer.generate(
                 encoder_tokens,
-                max_length=max_length
+                max_length=max_length,
+                start_token=vocab_size
             )
 
             predicted_indices = predictions[0].cpu().tolist()
