@@ -69,7 +69,7 @@ class WhipstrEncoder(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
     
-    def forward(self, image):
+    def forward(self, image, chunk=16):
         """Process spectrogram through overlapping windows.
         
         Args:
@@ -106,44 +106,42 @@ class WhipstrEncoder(nn.Module):
             raise ValueError("Input contains Inf values")
         
         try:
-            # Extract overlapping windows using unfold
-            # unfold(dimension, size, step)
-            # Result: [batch, 2, 836, num_windows, 28]
+
+            outputs = []
+
             windows = image.unfold(3, self.window_size, self.stride)
-            
-            # Calculate number of windows
-            num_windows = windows.shape[3]
-            
-            # Reshape to process all windows in parallel
-            # [batch, 2, 836, num_windows, 28] -> [batch * num_windows, 2, 836, 28]
-            windows = windows.permute(0, 3, 1, 2, 4).contiguous()
-            windows = windows.view(batch_size * num_windows, 2, 836, self.window_size)
-            
-            # Process through CNN
-            x = self.relu(self.conv1(windows))
-            x = self.relu(self.conv2(x))
-            x = self.pool1(x)
-            
-            x = self.relu(self.conv3(x))
-            x = self.pool2(x)
-            
-            x = self.relu(self.conv4(x))
-            x = self.pool3(x)
-            
-            # Flatten
-            x = x.view(x.size(0), -1)
-            
-            # Fully connected layers
-            x = self.relu(self.fc1(x))
-            x = self.dropout(x)
-            x = self.fc2(x)
-            
-            # No activation here - let the transformer work with raw logits
-            # This allows the model to express negative values and values > 1
-            
-            # Reshape back to [batch, num_windows, self.output_values]
+            windows = windows.permute(0, 3, 1, 2, 4)  # DO NOT make contiguous yet
+
+            num_windows = windows.shape[1]
+
+            for start in range(0, num_windows, chunk):
+
+                end = min(start + chunk, num_windows)
+
+                w = windows[:, start:end]                       # view
+                w = w.contiguous().view(-1, 2, 836, self.window_size)
+
+                x = self.relu(self.conv1(w))
+                x = self.relu(self.conv2(x))
+                x = self.pool1(x)
+
+                x = self.relu(self.conv3(x))
+                x = self.pool2(x)
+
+                x = self.relu(self.conv4(x))
+                x = self.pool3(x)
+
+                x = x.view(x.size(0), -1)
+
+                x = self.relu(self.fc1(x))
+                x = self.dropout(x)
+                x = self.fc2(x)
+
+                outputs.append(x)
+
+            x = torch.cat(outputs, dim=0)
             x = x.view(batch_size, num_windows, self.output_values)
-            
+
             return x
             
         except RuntimeError as e:

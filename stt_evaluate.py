@@ -35,9 +35,11 @@ def main():
                         help='Path to TSV speech data file')
     parser.add_argument('--limit', type=int, default=0,
                         help='Limit number of samples (0 = all)')
+    parser.add_argument('--force-cpu', type=bool, default=False,
+                        help='Force cpu (default False)')
     args = parser.parse_args()
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.force_cpu else 'cpu')
     print(f"Device: {device}")
 
     # Load dataset
@@ -85,26 +87,32 @@ def main():
     encoder.eval()
     transformer.eval()
 
-    # Determine max target length for generation
-    max_length = max(len(s) for _, s in dataset)
-
     all_references = []
     all_hypotheses = []
 
     print(f"\n{'─' * 60}")
-    with torch.no_grad():
+    with torch.inference_mode():
         for i in range(len(dataset)):
             image, ground_truth = dataset[i]
             image_batch = image.unsqueeze(0).to(device)
 
             encoder_tokens = encoder(image_batch)
+
+            del image_batch
+            encoder_tokens = encoder_tokens.cpu()
+
             predictions = transformer.generate(
-                encoder_tokens,
-                max_length=max_length,
+                encoder_tokens.to(device),
+                max_length = min(len(ground_truth) + 1, 128),
                 start_token=vocab_size
             )
 
+            del encoder_tokens
+
             predicted_indices = predictions[0].cpu().tolist()
+
+            del predictions
+
             predicted_text = ''.join(
                 idx_to_char.get(idx, '?')
                 for idx in predicted_indices
