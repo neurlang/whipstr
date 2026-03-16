@@ -206,8 +206,8 @@ def main():
         optimizer, mode='min', factor=0.5, patience=10, verbose=True, min_lr=1e-6
     )
 
-    # Loss function
-    criterion = nn.CrossEntropyLoss()
+    # Loss function (ignore padding token at index 0)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
 
     # Training loop
     print("\n" + "=" * 70)

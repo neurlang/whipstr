@@ -195,10 +195,10 @@ def main():
         list(encoder.parameters()) + list(transformer.parameters()),
         lr=learning_rate
     )
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
     print(f"   Optimizer: Adam")
     print(f"   Learning rate: {learning_rate}")
-    print(f"   Loss function: CrossEntropyLoss")
+    print(f"   Loss function: CrossEntropyLoss (ignore_index=0)")
     
     # Load checkpoint if --continue-pt was provided
     start_epoch = 0
