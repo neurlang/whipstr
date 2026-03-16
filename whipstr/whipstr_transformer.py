@@ -49,7 +49,7 @@ class WhipstrTransformer(nn.Module):
     """
     
     def __init__(self, d_model=256, nhead=8, num_encoder_layers=4, 
-                 num_decoder_layers=4, dim_feedforward=1024, dropout=0.1, vocab_size=11):
+                 num_decoder_layers=4, dim_feedforward=1024, dropout=0.1, vocab_size=11, input_values=64):
         """Initialize the WhipstrTransformer.
         
         Args:
@@ -65,9 +65,10 @@ class WhipstrTransformer(nn.Module):
         
         self.d_model = d_model
         self.vocab_size = vocab_size
+        self.input_values = input_values
         
-        # Encoder path: project tokens from 10 dimensions to d_model
-        self.encoder_projection = nn.Linear(10, d_model)
+        # Encoder path: project tokens from input_values dimensions to d_model
+        self.encoder_projection = nn.Linear(input_values, d_model)
         self.encoder_pos_encoding = PositionalEncoding(d_model, dropout=dropout)
         
         encoder_layer = nn.TransformerEncoderLayer(
@@ -105,7 +106,7 @@ class WhipstrTransformer(nn.Module):
         """Forward pass with teacher forcing.
         
         Args:
-            encoder_tokens: torch.Tensor [batch, T, 10] from CNN encoder
+            encoder_tokens: torch.Tensor [batch, T, self.input_values] from CNN encoder
             target_digits: torch.LongTensor [batch, N] previously generated tokens
             target_mask: torch.Tensor [N, N] causal mask for auto-regressive generation
         
@@ -117,9 +118,9 @@ class WhipstrTransformer(nn.Module):
             raise TypeError(f"encoder_tokens must be a torch.Tensor, got {type(encoder_tokens).__name__}")
         
         if encoder_tokens.dim() != 3:
-            raise ValueError(f"encoder_tokens must be 3D [batch, T, 10], got {encoder_tokens.dim()}D tensor with shape {encoder_tokens.shape}")
-        if encoder_tokens.size(2) != 10:
-            raise ValueError(f"encoder_tokens must have 10 features (class scores), got {encoder_tokens.size(2)}")
+            raise ValueError(f"encoder_tokens must be 3D [batch, T, self.input_values], got {encoder_tokens.dim()}D tensor with shape {encoder_tokens.shape}")
+        if encoder_tokens.size(2) != self.input_values:
+            raise ValueError(f"encoder_tokens must have self.input_values features (class scores), got {encoder_tokens.size(2)}")
         
         # Note: encoder_tokens are raw logits (no range restriction)
         
@@ -194,13 +195,13 @@ class WhipstrTransformer(nn.Module):
             else:
                 raise RuntimeError(f"Error during transformer forward pass: {str(e)}") from e
     
-    def generate(self, encoder_tokens, max_length, start_token=10):
+    def generate(self, encoder_tokens, max_length):
         """Auto-regressive generation for inference.
         
         Args:
-            encoder_tokens: torch.Tensor [batch, T, 10] from CNN encoder
+            encoder_tokens: torch.Tensor [batch, T, self.input_values] from CNN encoder
             max_length: Maximum number of tokens to generate
-            start_token: Special token to begin generation (default: 10 for backward compatibility)
+            start_token: Special token to begin generation (default: self.input_values for backward compatibility)
         
         Returns:
             torch.LongTensor [batch, max_length] predicted tokens
@@ -210,9 +211,9 @@ class WhipstrTransformer(nn.Module):
         
         # Validate encoder tokens
         if encoder_tokens.dim() != 3:
-            raise ValueError(f"encoder_tokens must be 3D [batch, T, 10], got shape {encoder_tokens.shape}")
-        if encoder_tokens.size(2) != 10:
-            raise ValueError(f"encoder_tokens must have 10 features, got {encoder_tokens.size(2)}")
+            raise ValueError(f"encoder_tokens must be 3D [batch, T, self.input_values], got shape {encoder_tokens.shape}")
+        if encoder_tokens.size(2) != self.input_values:
+            raise ValueError(f"encoder_tokens must have self.input_values features, got {encoder_tokens.size(2)}")
         
         # Encode once
         encoder_out = self.encoder_projection(encoder_tokens)
@@ -220,7 +221,7 @@ class WhipstrTransformer(nn.Module):
         encoder_memory = self.transformer_encoder(encoder_out)
         
         # Initialize with start token
-        generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
+        generated = torch.full((batch_size, 1), self.input_values, dtype=torch.long, device=device)
         
         # Generate tokens one at a time
         for _ in range(max_length):

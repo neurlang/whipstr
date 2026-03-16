@@ -6,11 +6,11 @@ class WhipstrEncoder(nn.Module):
     """CNN encoder that processes overlapping spectrogram windows for Whipstr STT (ASR).
     
     Extracts acoustic features from overlapping spectrogram windows using a shared CNN,
-    producing a sequence of tokens where each token contains 10 values
+    producing a sequence of tokens where each token contains 64 values
     representing output class scores.
     """
     
-    def __init__(self, stride=1, window_size=28, window_height=836):
+    def __init__(self, stride=1, window_size=28, window_height=836, output_values=64):
         """Initialize the WhipstrEncoder.
         
         Args:
@@ -41,6 +41,7 @@ class WhipstrEncoder(nn.Module):
         self.stride = stride
         self.window_size = window_size
         self.window_height = window_height
+        self.output_values = output_values
         
         # CNN architecture for processing [836, window_size] spectrogram windows
         # Input: [batch, 2, 836, window_size]
@@ -63,7 +64,7 @@ class WhipstrEncoder(nn.Module):
         
         # Fully connected layers
         self.fc1 = nn.Linear(fc_input_size, 256)
-        self.fc2 = nn.Linear(256, 10)
+        self.fc2 = nn.Linear(256, output_values)
         
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
@@ -75,7 +76,7 @@ class WhipstrEncoder(nn.Module):
             image: torch.Tensor of shape [batch, 2, 836, W]
         
         Returns:
-            torch.Tensor of shape [batch, T, 10] where T = (W - window_size) // stride + 1
+            torch.Tensor of shape [batch, T, output_values] where T = (W - window_size) // stride + 1
         """
         # Validate input is a tensor
         if not isinstance(image, torch.Tensor):
@@ -140,8 +141,8 @@ class WhipstrEncoder(nn.Module):
             # No activation here - let the transformer work with raw logits
             # This allows the model to express negative values and values > 1
             
-            # Reshape back to [batch, num_windows, 10]
-            x = x.view(batch_size, num_windows, 10)
+            # Reshape back to [batch, num_windows, self.output_values]
+            x = x.view(batch_size, num_windows, self.output_values)
             
             return x
             
