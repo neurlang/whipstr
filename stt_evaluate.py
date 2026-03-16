@@ -8,37 +8,21 @@ Usage:
 import argparse
 import json
 
+import jiwer
+import jiwer.transforms as tr
 import torch
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 from whipstr.whipstr_encoder import WhipstrEncoder
 from whipstr.whipstr_transformer import WhipstrTransformer
 
-
-def compute_wer(reference: str, hypothesis: str) -> tuple[int, int]:
-    """Compute word-level edit distance (Levenshtein) between reference and hypothesis.
-
-    Returns (edit_distance, reference_word_count).
-    """
-    ref_words = reference.split()
-    hyp_words = hypothesis.split()
-    r = len(ref_words)
-    h = len(hyp_words)
-
-    # DP matrix
-    d = [[0] * (h + 1) for _ in range(r + 1)]
-    for i in range(r + 1):
-        d[i][0] = i
-    for j in range(h + 1):
-        d[0][j] = j
-
-    for i in range(1, r + 1):
-        for j in range(1, h + 1):
-            if ref_words[i - 1] == hyp_words[j - 1]:
-                d[i][j] = d[i - 1][j - 1]
-            else:
-                d[i][j] = 1 + min(d[i - 1][j], d[i][j - 1], d[i - 1][j - 1])
-
-    return d[r][h], max(r, 1)
+# Shared WER transform: lowercase, strip punctuation, normalize whitespace
+wer_transform = tr.Compose([
+    tr.ToLowerCase(),
+    tr.RemovePunctuation(),
+    tr.RemoveMultipleSpaces(),
+    tr.Strip(),
+    tr.ReduceToListOfListOfWords(),
+])
 
 
 def main():
@@ -104,8 +88,8 @@ def main():
     # Determine max target length for generation
     max_length = max(len(s) for _, s in dataset)
 
-    total_edits = 0
-    total_ref_words = 0
+    all_references = []
+    all_hypotheses = []
 
     print(f"\n{'─' * 60}")
     with torch.no_grad():
@@ -116,8 +100,7 @@ def main():
             encoder_tokens = encoder(image_batch)
             predictions = transformer.generate(
                 encoder_tokens,
-                max_length=max_length,
-                start_token=start_token_idx,
+                max_length=max_length
             )
 
             predicted_indices = predictions[0].cpu().tolist()
@@ -127,18 +110,25 @@ def main():
                 if 0 < idx < vocab_size
             )
 
-            edits, ref_words = compute_wer(ground_truth, predicted_text)
-            total_edits += edits
-            total_ref_words += ref_words
+            all_references.append(ground_truth)
+            all_hypotheses.append(predicted_text)
 
-            sample_wer = edits / ref_words * 100
-            print(f"[{i+1}/{len(dataset)}]  WER={sample_wer:5.1f}%")
+            sample_wer = jiwer.wer(
+                ground_truth, predicted_text,
+                reference_transform=wer_transform,
+                hypothesis_transform=wer_transform,
+            )
+            print(f"[{i+1}/{len(dataset)}]  WER={sample_wer * 100:5.1f}%")
             print(f"  REF: {ground_truth}")
             print(f"  HYP: {predicted_text}")
 
-    overall_wer = total_edits / max(total_ref_words, 1) * 100
+    overall_wer = jiwer.wer(
+        all_references, all_hypotheses,
+        reference_transform=wer_transform,
+        hypothesis_transform=wer_transform,
+    )
     print(f"{'─' * 60}")
-    print(f"\nOverall WER: {overall_wer:.2f}%  ({total_edits} edits / {total_ref_words} ref words)")
+    print(f"\nOverall WER: {overall_wer * 100:.2f}%")
 
 
 if __name__ == '__main__':

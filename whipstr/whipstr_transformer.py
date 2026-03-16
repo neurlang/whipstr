@@ -221,7 +221,7 @@ class WhipstrTransformer(nn.Module):
         encoder_memory = self.transformer_encoder(encoder_out)
         
         # Initialize with start token
-        generated = torch.full((batch_size, 1), self.input_values, dtype=torch.long, device=device)
+        generated = torch.full((batch_size, 1), 0, dtype=torch.long, device=device)
         
         # Generate tokens one at a time
         for _ in range(max_length):
