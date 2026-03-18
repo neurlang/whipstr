@@ -103,7 +103,7 @@ def main():
 
             predictions = transformer.generate(
                 encoder_tokens.to(device),
-                max_length = min(len(ground_truth) + 1, 128),
+                max_length = len(ground_truth) + 1,
                 start_token=vocab_size
             )
 
