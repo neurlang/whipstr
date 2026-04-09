@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Set up `imagen/` package structure and shared utilities
+- [x] 1. Set up `imagen/` package structure and shared utilities
   - Create `imagen/__init__.py`
   - Add input validation helpers (shape checks, NaN/Inf guards) reusable across modules
   - _Requirements: 1.1, 4.2_
