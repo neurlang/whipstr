@@ -59,7 +59,7 @@
   - **Feature: imagen-stage2-trainer, Property 7: Checkpoint round-trip**
   - **Validates: Requirements 7.1, 7.3**
 
-- [ ] 4. Checkpoint — Ensure all tests pass, ask the user if questions arise.
+- [x] 4. Checkpoint — Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement `SpectrogramWindowDataset`
 - [ ] 5.1 Create `imagen/spectrogram_window_dataset.py`
