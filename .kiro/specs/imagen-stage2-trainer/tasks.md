@@ -5,13 +5,13 @@
   - Add input validation helpers (shape checks, NaN/Inf guards) reusable across modules
   - _Requirements: 1.1, 4.2_
 
-- [ ] 2. Implement `ConditioningMLP`
-- [ ] 2.1 Create `imagen/conditioning_mlp.py` with `ConditioningMLP(in_dim=64, hidden_dim=128, out_dim)`
+- [x] 2. Implement `ConditioningMLP`
+- [x] 2.1 Create `imagen/conditioning_mlp.py` with `ConditioningMLP(in_dim=64, hidden_dim=128, out_dim)`
   - Two linear layers with ReLU between them
   - Output shape `(B, out_dim)` suitable for broadcast-adding to bottleneck
   - _Requirements: 2.1, 2.2, 2.3_
 
-- [ ] 2.2 Write property test for conditioning MLP output shape (Property 4)
+- [x] 2.2 Write property test for conditioning MLP output shape (Property 4)
   - **Feature: imagen-stage2-trainer, Property 4: Conditioning vector influence**
   - **Validates: Requirements 2.1, 2.2**
 
