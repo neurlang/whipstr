@@ -5,8 +5,10 @@ non-overlapping (2, 11, 836) windows for Stage 2 training.
 Requirements: 6.1, 6.2, 6.3, 6.4
 """
 
+import os
 import torch
 from torch.utils.data import Dataset
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Union
 
 
@@ -36,7 +38,8 @@ class SpectrogramWindowDataset(Dataset):
             # Lazy import to avoid hard dependency when using tensor lists
             from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
             tsv_ds = WhipstrTSVSpeechDataset(source, limit=limit)
-            spectrograms = [tsv_ds[i][0] for i in range(len(tsv_ds))]
+            with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+                spectrograms = list(pool.map(lambda i: tsv_ds[i][0], range(len(tsv_ds))))
         elif isinstance(source, list):
             spectrograms = source
         else:
