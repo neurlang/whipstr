@@ -6,11 +6,9 @@ Requirements: 6.1, 6.2, 6.3, 6.4
 """
 
 import os
-import sys
 import torch
 from torch.utils.data import Dataset
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import get_context
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Union
 
 
@@ -74,11 +72,9 @@ class SpectrogramWindowDataset(Dataset):
             rest = flac_paths[1:]
 
             if rest:
-                # Use fork context on Linux: workers inherit the process image
-                # instantly without re-importing everything (much faster than spawn)
-                mp_ctx = get_context("fork")
-                with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=mp_ctx) as pool:
-                    remaining = list(pool.map(_load_spectrogram, rest, chunksize=4))
+                # sf.read and numpy FFT release the GIL, so threads get real parallelism
+                with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+                    remaining = list(pool.map(_load_spectrogram, rest))
             else:
                 remaining = []
 
