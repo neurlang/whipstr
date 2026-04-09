@@ -61,19 +61,19 @@
 
 - [x] 4. Checkpoint — Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement `SpectrogramWindowDataset`
-- [ ] 5.1 Create `imagen/spectrogram_window_dataset.py`
+- [x] 5. Implement `SpectrogramWindowDataset`
+- [x] 5.1 Create `imagen/spectrogram_window_dataset.py`
   - Accept a list of `(2, 836, W)` tensors or a TSV path (reuse `WhipstrTSVSpeechDataset`)
   - Slice each spectrogram into non-overlapping `(2, 11, 836)` windows (transpose time/freq axes)
   - Discard remainder when `W % 11 != 0`
   - Build 64-float conditioning vector: `[position_norm, mean_ch0, std_ch0, mean_ch1, std_ch1, zeros...]`
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 5.2 Write property test for dataset window shape (Property 9)
+- [x] 5.2 Write property test for dataset window shape (Property 9)
   - **Feature: imagen-stage2-trainer, Property 9: Dataset window shape**
   - **Validates: Requirements 6.2, 6.4**
 
-- [ ] 5.3 Write property test for dataset window count (Property 10)
+- [x] 5.3 Write property test for dataset window count (Property 10)
   - **Feature: imagen-stage2-trainer, Property 10: Dataset window count**
   - **Validates: Requirements 6.2, 6.3**
 
