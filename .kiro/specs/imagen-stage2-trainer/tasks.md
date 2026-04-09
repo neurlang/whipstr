@@ -15,47 +15,47 @@
   - **Feature: imagen-stage2-trainer, Property 4: Conditioning vector influence**
   - **Validates: Requirements 2.1, 2.2**
 
-- [ ] 3. Implement `ImageGenerator` U-Net
-- [ ] 3.1 Create `imagen/image_generator.py` — encoder path
+- [-] 3. Implement `ImageGenerator` U-Net
+- [x] 3.1 Create `imagen/image_generator.py` — encoder path
   - `time_down`: `Conv2d(2→64, k=(11,1), s=(11,1))`
   - `freq_down1/2/3`: stride-2 convs along frequency axis (836→418→209→105)
   - Store skip connection tensors at each freq level
   - _Requirements: 1.2, 1.3_
 
-- [ ] 3.2 Write property test for time axis collapse (Property 2)
+- [x] 3.2 Write property test for time axis collapse (Property 2)
   - **Feature: imagen-stage2-trainer, Property 2: Time axis collapse and restore**
   - **Validates: Requirements 1.2, 1.5**
 
-- [ ] 3.3 Write property test for frequency bottleneck size (Property 3)
+- [x] 3.3 Write property test for frequency bottleneck size (Property 3)
   - **Feature: imagen-stage2-trainer, Property 3: Frequency bottleneck size**
   - **Validates: Requirements 1.3**
 
-- [ ] 3.4 Add bottleneck residual block and conditioning injection
+- [x] 3.4 Add bottleneck residual block and conditioning injection
   - Two `Conv2d(256→256, k=(1,3), p=(0,1))` with residual connection
   - Call `ConditioningMLP`, reshape output to `(B, C, 1, 1)`, add to bottleneck
   - _Requirements: 2.2, 4.1_
 
-- [ ] 3.5 Add decoder path (frequency upsampling + time upsampling)
+- [x] 3.5 Add decoder path (frequency upsampling + time upsampling)
   - `freq_up3/2/1`: `ConvTranspose2d` with skip concatenation at each level
   - `time_up`: `ConvTranspose2d(128→2, k=(11,1), s=(11,1))`
   - _Requirements: 1.4, 1.5, 1.6_
 
-- [ ] 3.6 Add `get_config` method returning constructor hyperparameters dict
+- [x] 3.6 Add `get_config` method returning constructor hyperparameters dict
   - _Requirements: 7.3_
 
-- [ ] 3.7 Write property test for output shape identity (Property 1)
+- [x] 3.7 Write property test for output shape identity (Property 1)
   - **Feature: imagen-stage2-trainer, Property 1: Output shape identity**
   - **Validates: Requirements 1.1**
 
-- [ ] 3.8 Write property test for finite output values (Property 6)
+- [x] 3.8 Write property test for finite output values (Property 6)
   - **Feature: imagen-stage2-trainer, Property 6: Noise prediction finite values**
   - **Validates: Requirements 1.1, 4.2**
 
-- [ ] 3.9 Write property test for conditioning influence (Property 4)
+- [x] 3.9 Write property test for conditioning influence (Property 4)
   - **Feature: imagen-stage2-trainer, Property 4: Conditioning vector influence**
   - **Validates: Requirements 2.1, 2.2**
 
-- [ ] 3.10 Write property test for checkpoint round-trip (Property 7)
+- [x] 3.10 Write property test for checkpoint round-trip (Property 7)
   - **Feature: imagen-stage2-trainer, Property 7: Checkpoint round-trip**
   - **Validates: Requirements 7.1, 7.3**
 
