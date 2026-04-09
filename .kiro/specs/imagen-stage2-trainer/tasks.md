@@ -15,7 +15,7 @@
   - **Feature: imagen-stage2-trainer, Property 4: Conditioning vector influence**
   - **Validates: Requirements 2.1, 2.2**
 
-- [-] 3. Implement `ImageGenerator` U-Net
+- [x] 3. Implement `ImageGenerator` U-Net
 - [x] 3.1 Create `imagen/image_generator.py` — encoder path
   - `time_down`: `Conv2d(2→64, k=(11,1), s=(11,1))`
   - `freq_down1/2/3`: stride-2 convs along frequency axis (836→418→209→105)
