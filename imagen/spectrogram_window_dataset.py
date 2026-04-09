@@ -12,12 +12,32 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import List, Union
 
 
-def _load_spectrogram(args):
-    """Top-level function (picklable) for multiprocessing."""
-    tsv_path, idx, limit = args
-    from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
-    ds = WhipstrTSVSpeechDataset(tsv_path, limit=limit)
-    return ds[idx][0]
+def _load_spectrogram(flac_path: str) -> torch.Tensor:
+    """Top-level function (picklable) for multiprocessing. Loads a single FLAC file."""
+    import torch
+    from phase import Phase
+
+    phase = Phase(y_reverse=True)
+    audio_array = phase.to_tensor_flac(flac_path)
+
+    if not isinstance(audio_array, torch.Tensor):
+        audio_tensor = torch.from_numpy(audio_array).float()
+    else:
+        audio_tensor = audio_array.float()
+
+    num_freqs = phase.num_freqs
+    total_samples = audio_tensor.shape[0]
+    actual_frames = total_samples // num_freqs
+    audio_tensor = audio_tensor.reshape(actual_frames, num_freqs, 2).permute(2, 1, 0)
+
+    channels, height, width = audio_tensor.shape
+    if height < 836:
+        pad = torch.zeros(channels, 836 - height, width)
+        audio_tensor = torch.cat([audio_tensor, pad], dim=1)
+    elif height > 836:
+        audio_tensor = audio_tensor[:, :836, :]
+
+    return audio_tensor.float()
 
 
 class SpectrogramWindowDataset(Dataset):
@@ -45,10 +65,19 @@ class SpectrogramWindowDataset(Dataset):
         if isinstance(source, str):
             from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
             tsv_ds = WhipstrTSVSpeechDataset(source, limit=limit)
-            n = len(tsv_ds)
-            args = [(source, i, limit) for i in range(n)]
-            with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
-                spectrograms = list(pool.map(_load_spectrogram, args))
+            flac_paths = [tsv_ds.samples[i][0] for i in range(len(tsv_ds))]
+
+            # First file must be loaded serially to initialise Phase state
+            first = _load_spectrogram(flac_paths[0])
+            rest = flac_paths[1:]
+
+            if rest:
+                with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
+                    remaining = list(pool.map(_load_spectrogram, rest, chunksize=4))
+            else:
+                remaining = []
+
+            spectrograms = [first] + remaining
         elif isinstance(source, list):
             spectrograms = source
         else:
