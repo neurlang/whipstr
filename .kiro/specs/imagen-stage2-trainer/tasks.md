@@ -77,33 +77,33 @@
   - **Feature: imagen-stage2-trainer, Property 10: Dataset window count**
   - **Validates: Requirements 6.2, 6.3**
 
-- [ ] 6. Implement `ImagenTrainer`
-- [ ] 6.1 Create `imagen/imagen_train.py` — trainer class and noise injection
+- [x] 6. Implement `ImagenTrainer`
+- [x] 6.1 Create `imagen/imagen_train.py` — trainer class and noise injection
   - Load `WhipstrEncoder` from checkpoint path, freeze all parameters (`requires_grad=False`)
   - Implement `add_noise(x_clean, t)` → `x_t = x_clean + t * noise`, return `(x_t, noise)`
   - _Requirements: 3.1, 3.2, 4.1_
 
-- [ ] 6.2 Write property test for frozen encoder invariance (Property 5)
+- [x] 6.2 Write property test for frozen encoder invariance (Property 5)
   - **Feature: imagen-stage2-trainer, Property 5: Frozen encoder invariance**
   - **Validates: Requirements 3.2**
 
-- [ ] 6.3 Implement loss computation
+- [x] 6.3 Implement loss computation
   - `loss_noise = MSE(noise_pred, noise)`
   - `loss_recon = MSE(encoder(x_denoised), encoder(x_clean))` with frozen encoder
   - `total_loss = loss_noise + lambda_recon * loss_recon`
   - _Requirements: 4.2, 4.3, 4.4_
 
-- [ ] 6.4 Implement training loop with logging and checkpointing
+- [x] 6.4 Implement training loop with logging and checkpointing
   - Epoch loop over `SpectrogramWindowDataset` via `DataLoader`
   - Log `loss_noise` and `loss_recon` per epoch to stdout
   - Save checkpoint every N epochs to configurable output directory
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 6.5 Implement checkpoint resume logic
+- [x] 6.5 Implement checkpoint resume logic
   - Load checkpoint, restore `generator_state_dict`, `optimizer_state_dict`, and `epoch`
   - _Requirements: 5.4_
 
-- [ ] 6.6 Write property test for optimizer state round-trip (Property 8)
+- [x] 6.6 Write property test for optimizer state round-trip (Property 8)
   - **Feature: imagen-stage2-trainer, Property 8: Optimizer state round-trip**
   - **Validates: Requirements 7.2**
 
