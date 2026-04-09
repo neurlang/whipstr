@@ -4,7 +4,7 @@ Quick test script for Whipstr STT (ASR) WhipstrTSVSpeechDataset
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 
 # Create dataset
-dataset = WhipstrTSVSpeechDataset('data/TSV_SPEECH/speech.tsv', noise_std=0.1)
+dataset = WhipstrTSVSpeechDataset('data/TSV_SPEECH/speech.tsv')
 
 print(f"Dataset size: {len(dataset)}")
 
