@@ -71,7 +71,9 @@ class ImagenTrainer:
         ckpt = torch.load(path, map_location=self.device, weights_only=False)
 
         # Support both raw state_dict and wrapped checkpoint dicts
-        if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        if isinstance(ckpt, dict) and "encoder_state_dict" in ckpt:
+            state_dict = ckpt["encoder_state_dict"]
+        elif isinstance(ckpt, dict) and "model_state_dict" in ckpt:
             state_dict = ckpt["model_state_dict"]
         elif isinstance(ckpt, dict) and "state_dict" in ckpt:
             state_dict = ckpt["state_dict"]

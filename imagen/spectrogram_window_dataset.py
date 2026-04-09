@@ -27,7 +27,7 @@ class SpectrogramWindowDataset(Dataset):
     WINDOW_TIME = 11   # time frames per window
     COND_DIM    = 64   # conditioning vector length
 
-    def __init__(self, source: Union[str, List[torch.Tensor]]):
+    def __init__(self, source: Union[str, List[torch.Tensor]], limit=0):
         """
         Args:
             source: TSV file path (str) or list of (2, 836, W) tensors.
@@ -35,7 +35,7 @@ class SpectrogramWindowDataset(Dataset):
         if isinstance(source, str):
             # Lazy import to avoid hard dependency when using tensor lists
             from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
-            tsv_ds = WhipstrTSVSpeechDataset(source)
+            tsv_ds = WhipstrTSVSpeechDataset(source, limit=limit)
             spectrograms = [tsv_ds[i][0] for i in range(len(tsv_ds))]
         elif isinstance(source, list):
             spectrograms = source
