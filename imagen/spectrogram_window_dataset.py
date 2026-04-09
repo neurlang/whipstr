@@ -8,8 +8,16 @@ Requirements: 6.1, 6.2, 6.3, 6.4
 import os
 import torch
 from torch.utils.data import Dataset
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from typing import List, Union
+
+
+def _load_spectrogram(args):
+    """Top-level function (picklable) for multiprocessing."""
+    tsv_path, idx, limit = args
+    from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
+    ds = WhipstrTSVSpeechDataset(tsv_path, limit=limit)
+    return ds[idx][0]
 
 
 class SpectrogramWindowDataset(Dataset):
@@ -35,11 +43,12 @@ class SpectrogramWindowDataset(Dataset):
             source: TSV file path (str) or list of (2, 836, W) tensors.
         """
         if isinstance(source, str):
-            # Lazy import to avoid hard dependency when using tensor lists
             from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
             tsv_ds = WhipstrTSVSpeechDataset(source, limit=limit)
-            with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
-                spectrograms = list(pool.map(lambda i: tsv_ds[i][0], range(len(tsv_ds))))
+            n = len(tsv_ds)
+            args = [(source, i, limit) for i in range(n)]
+            with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
+                spectrograms = list(pool.map(_load_spectrogram, args))
         elif isinstance(source, list):
             spectrograms = source
         else:
