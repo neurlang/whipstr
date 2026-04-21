@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, '.')
 
 import torch
-from transformers import AutoConfig
+from transformers import AutoModel, AutoConfig
 
 from whipstr.hf_integration import (
     WhipstrConfig, 
@@ -15,23 +15,19 @@ from whipstr.hf_integration import (
     WhipstrFeatureExtractor
 )
 AutoConfig.register("whipstr", WhipstrConfig)
+AutoModel.register(WhipstrConfig, WhipstrForConditionalGeneration)
 
 
 def infer(audio_path, model_path):
     """Run inference on audio file."""
     
-    config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-    
-    # Load model with safetensors support
-    from safetensors.torch import load_file
-    state_dict = load_file(f"{model_path}/model.safetensors")
-    
-    model = WhipstrForConditionalGeneration(config)
-    model.load_state_dict(state_dict)
+    model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+    config = model.config
     model.eval()
     
-    # Load tokenizer
-    tokenizer = WhipstrTokenizer(f"{model_path}/model.json")
+    from transformers.utils import cached_file
+    vocab_file = cached_file(model_path, 'model.json', trust_remote_code=True)
+    tokenizer = WhipstrTokenizer(vocab_file)
     
     # Load feature extractor and process audio
     # Determine sampling rate from file to set correct num_freqs (matches Phase behavior)
