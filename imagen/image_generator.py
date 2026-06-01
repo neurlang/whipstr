@@ -81,6 +81,9 @@ class SinusoidalTimeEmbedding(nn.Module):
 class ResBlock(nn.Module):
     """Two 3×3 convs with GroupNorm + SiLU and timestep-embedding injection.
 
+    Uses replicate padding so the narrow time axis (width=11) is not corrupted
+    by zero-padding artifacts at the left/right edges.
+
     Args:
         in_ch:  Input channels.
         out_ch: Output channels.
@@ -90,9 +93,9 @@ class ResBlock(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, t_dim: int):
         super().__init__()
         self.norm1  = _groupnorm(in_ch)
-        self.conv1  = nn.Conv2d(in_ch,  out_ch, 3, padding=1)
+        self.conv1  = nn.Conv2d(in_ch,  out_ch, 3, padding=1, padding_mode='replicate')
         self.norm2  = _groupnorm(out_ch)
-        self.conv2  = nn.Conv2d(out_ch, out_ch, 3, padding=1)
+        self.conv2  = nn.Conv2d(out_ch, out_ch, 3, padding=1, padding_mode='replicate')
         self.act    = nn.SiLU()
         self.t_proj = nn.Linear(t_dim, out_ch)
         self.skip   = nn.Conv2d(in_ch, out_ch, 1) if in_ch != out_ch else nn.Identity()
@@ -156,7 +159,7 @@ class ImageGenerator(nn.Module):
 
         # ── Encoder ──────────────────────────────────────────────────────
         # (B, 2, 836, 11) → (B, C, 836, 11)
-        self.enc_in   = nn.Conv2d(in_channels, C, 3, padding=1)
+        self.enc_in   = nn.Conv2d(in_channels, C, 3, padding=1, padding_mode='replicate')
 
         # (B, C, 836, 11) → (B, C*2, 836, 11) → down → (B, C*2, 418, 11)
         self.enc_res1 = ResBlock(C,     C * 2, t_dim)
