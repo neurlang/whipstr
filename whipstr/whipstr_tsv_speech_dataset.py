@@ -46,6 +46,17 @@ class WhipstrTSVSpeechDataset(Dataset):
                     parts = line.split(',')
                 elif '|' in line:
                     parts = line.split('|')
+                else:
+                    parts = [line]
+                if len(parts) == 0:
+                    continue
+
+                # If flac_path is a glob pattern like *.wav, expand to directory files
+
+                if parts[0].endswith(('*.wav', '*.flac', '*.mp3')):
+                    self._add_directory_files(parts[0])
+                    continue
+
                 if len(parts) != 2:
                     raise ValueError(f"Invalid TSV line format (expected 2 columns): {line}")
                 flac_path, transcription = parts
@@ -62,7 +73,23 @@ class WhipstrTSVSpeechDataset(Dataset):
         
         if len(self.samples) == 0:
             raise ValueError(f"No valid samples found in TSV file: {tsv_path}")
+
+    def _add_directory_files(self, pattern_path):
+        """Add all files from a directory matching the glob suffix."""
+        directory = os.path.dirname(pattern_path)
+        suffix = os.path.basename(pattern_path).lstrip('*')  # e.g. '.wav'
+        if not os.path.isdir(directory):
+            raise FileNotFoundError(f"Directory not found: {directory}")
+        for fname in os.listdir(directory):
+            if fname.endswith(suffix):
+                full_path = os.path.join(directory, fname)
+                self.limit -= 1
+                if self.limit >= 0:
+                    self.samples.append((full_path, ''))
+                else:
+                    return
     
+
     def __len__(self):
         """Return the number of samples in the dataset."""
         return len(self.samples)

@@ -1,10 +1,8 @@
 """
-ImagenTrainer — orchestrates Stage 2 diffusion training.
+ImagenTrainer — orchestrates Stage 2 diffusion training conditioned on encoder tokens.
 
-Loads a frozen WhipstrEncoder as the decoder, trains an ImageGenerator
-with a noise-prediction + auxiliary reconstruction loss.
-
-Requirements: 3.1, 3.2, 4.1–4.4, 5.1–5.4, 7.2
+Standard DDPM noise-prediction loss.  The 64-dim encoder token conditions the
+U-Net via the bottleneck MLP.  No auxiliary reconstruction loss.
 """
 
 import os
@@ -19,17 +17,16 @@ from .spectrogram_window_dataset import SpectrogramWindowDataset
 
 
 class ImagenTrainer:
-    """Trains an ImageGenerator using a diffusion-style noise-prediction objective.
+    """Trains an ImageGenerator with a diffusion noise-prediction objective.
 
-    The frozen Stage 1 WhipstrEncoder acts as the decoder: its token output
-    provides an auxiliary reconstruction loss that anchors the generator to
-    acoustically meaningful reconstructions.
+    The generator takes a noisy 2D spectrogram window + a 64-dim conditioning
+    token (from the frozen Stage 1 encoder), and predicts the noise that was
+    added.  Loss is standard DDPM: MSE(noise_pred, noise).
 
     Args:
         encoder_checkpoint_path: Path to the WhipstrEncoder checkpoint (.pt).
         generator:               Pre-built ImageGenerator instance (optional).
                                  If None, a default ImageGenerator() is created.
-        lambda_recon:            Weight for the auxiliary reconstruction loss.
         lr:                      Learning rate for the Adam optimizer.
         device:                  Torch device string (e.g. "cpu", "cuda").
     """
@@ -38,15 +35,13 @@ class ImagenTrainer:
         self,
         encoder_checkpoint_path: str,
         generator: Optional[ImageGenerator] = None,
-        lambda_recon: float = 0.1,
         lr: float = 1e-4,
         device: str = "cpu",
     ):
         self.device = torch.device(device)
-        self.lambda_recon = lambda_recon
         self.current_epoch = 0
 
-        # ── Load and freeze WhipstrEncoder (Requirements 3.1, 3.2) ──────────
+        # ── Load and freeze WhipstrEncoder (for inference token computation) ─
         if not os.path.exists(encoder_checkpoint_path):
             raise FileNotFoundError(
                 f"WhipstrEncoder checkpoint not found: {encoder_checkpoint_path}"
@@ -70,7 +65,6 @@ class ImagenTrainer:
 
         ckpt = torch.load(path, map_location=self.device, weights_only=False)
 
-        # Support both raw state_dict and wrapped checkpoint dicts
         if isinstance(ckpt, dict) and "encoder_state_dict" in ckpt:
             state_dict = ckpt["encoder_state_dict"]
         elif isinstance(ckpt, dict) and "model_state_dict" in ckpt:
@@ -84,14 +78,13 @@ class ImagenTrainer:
         encoder.load_state_dict(state_dict)
         encoder = encoder.to(self.device)
 
-        # Freeze all parameters (Requirement 3.2)
         for param in encoder.parameters():
             param.requires_grad = False
         encoder.eval()
 
         return encoder
 
-    # ── Noise injection (Requirement 4.1) ────────────────────────────────────
+    # ── Noise injection ──────────────────────────────────────────────────────
 
     def add_noise(
         self, x_clean: torch.Tensor, t: torch.Tensor
@@ -106,55 +99,38 @@ class ImagenTrainer:
             (x_t, noise): Noisy input and the noise that was added.
         """
         noise = torch.randn_like(x_clean)
-        # Broadcast t to (B, 1, 1, 1) for element-wise scaling
         if t.dim() == 1:
             t = t.view(-1, 1, 1, 1)
         x_t = x_clean + t * noise
         return x_t, noise
 
-    # ── Loss computation (Requirements 4.2, 4.3, 4.4) ────────────────────────
+    # ── Loss computation ────────────────────────────────────────────────────
 
     def compute_loss(
         self,
         x_clean: torch.Tensor,
         cond: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Compute noise-prediction + auxiliary reconstruction loss.
+    ) -> torch.Tensor:
+        """Compute standard DDPM noise-prediction loss.
 
         Args:
             x_clean: Clean windows, shape (B, 2, 11, 836).
-            cond:    Conditioning vectors, shape (B, 64).
+            cond:    Conditioning tokens from encoder, shape (B, 64).
 
         Returns:
-            (total_loss, loss_noise, loss_recon)
+            Scalar loss tensor.
         """
         B = x_clean.shape[0]
         t = torch.rand(B, device=self.device)
 
         x_t, noise = self.add_noise(x_clean, t)
 
-        # Noise prediction
         noise_pred = self.generator(x_t, cond)
-        loss_noise = self.mse(noise_pred, noise)
+        loss = self.mse(noise_pred, noise)
 
-        # Auxiliary reconstruction loss via frozen encoder (Requirement 4.3)
-        x_denoised = x_t - noise_pred
+        return loss
 
-        # WhipstrEncoder expects (B, 2, 836, W); our windows are (B, 2, 11, 836)
-        # Permute to (B, 2, 836, 11) to match encoder's expected format
-        x_denoised_enc = x_denoised.permute(0, 1, 3, 2)
-        x_clean_enc = x_clean.permute(0, 1, 3, 2)
-
-        with torch.no_grad():
-            tokens_pred = self.encoder(x_denoised_enc)
-            tokens_clean = self.encoder(x_clean_enc)
-
-        loss_recon = self.mse(tokens_pred, tokens_clean)
-        total_loss = loss_noise + self.lambda_recon * loss_recon
-
-        return total_loss, loss_noise, loss_recon
-
-    # ── Training loop (Requirements 5.1, 5.2, 5.3) ───────────────────────────
+    # ── Training loop ────────────────────────────────────────────────────────
 
     def train(
         self,
@@ -178,8 +154,7 @@ class ImagenTrainer:
 
         for epoch in range(self.current_epoch, self.current_epoch + num_epochs):
             self.generator.train()
-            total_noise = 0.0
-            total_recon = 0.0
+            total_loss = 0.0
             n_batches = 0
 
             for windows, cond in loader:
@@ -187,33 +162,29 @@ class ImagenTrainer:
                 cond = cond.to(self.device)
 
                 self.optimizer.zero_grad()
-                loss, loss_noise, loss_recon = self.compute_loss(windows, cond)
+                loss = self.compute_loss(windows, cond)
                 loss.backward()
                 self.optimizer.step()
 
-                total_noise += loss_noise.item()
-                total_recon += loss_recon.item()
+                total_loss += loss.item()
                 n_batches += 1
 
-            avg_noise = total_noise / max(n_batches, 1)
-            avg_recon = total_recon / max(n_batches, 1)
+            avg_loss = total_loss / max(n_batches, 1)
 
-            # Logging (Requirement 5.2)
             print(
                 f"Epoch {epoch + 1}/{self.current_epoch + num_epochs} — "
-                f"loss_noise: {avg_noise:.6f}  loss_recon: {avg_recon:.6f}"
+                f"loss: {avg_loss:.6f}"
             )
 
-            # Checkpointing (Requirement 5.3)
             if (epoch + 1) % checkpoint_interval == 0:
-                self._save_checkpoint(epoch + 1, avg_noise, avg_recon, output_dir)
+                self._save_checkpoint(epoch + 1, avg_loss, output_dir)
 
         self.current_epoch += num_epochs
 
-    # ── Checkpoint save/load (Requirements 5.3, 5.4, 7.2) ───────────────────
+    # ── Checkpoint save/load ─────────────────────────────────────────────────
 
     def _save_checkpoint(
-        self, epoch: int, loss_noise: float, loss_recon: float, output_dir: str
+        self, epoch: int, loss: float, output_dir: str
     ) -> str:
         """Save a training checkpoint and return the file path."""
         path = os.path.join(output_dir, f"checkpoint_epoch_{epoch:04d}.pt")
@@ -222,8 +193,7 @@ class ImagenTrainer:
                 "epoch": epoch,
                 "generator_state_dict": self.generator.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
-                "loss_noise": loss_noise,
-                "loss_recon": loss_recon,
+                "loss": loss,
                 "config": self.generator.get_config(),
             },
             path,
@@ -232,7 +202,7 @@ class ImagenTrainer:
         return path
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
-        """Resume training from a checkpoint (Requirement 5.4).
+        """Resume training from a checkpoint.
 
         Restores generator weights, optimizer state, and epoch counter.
 

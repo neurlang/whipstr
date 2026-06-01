@@ -1,20 +1,23 @@
 """
 SpectrogramWindowDataset — slices full (2, 836, W) spectrograms into
-non-overlapping (2, 11, 836) windows for Stage 2 training.
+overlapping (2, 11, 836) windows with stride=1 for Stage 2 training.
 
-Requirements: 6.1, 6.2, 6.3, 6.4
+Each sample is (window, token) where:
+  - window : overlapping spectrogram slice (2, 11, 836)
+  - token  : 64-dim encoder output for that window (64,)
+
+Tokens are precomputed during __init__ to avoid repeated encoder passes.
+Windows are sliced lazily in __getitem__ to avoid RAM duplication.
 """
 
 import os
 import torch
 from torch.utils.data import Dataset
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Union
+from typing import List, Tuple, Union
 
 
 def _load_spectrogram(flac_path: str) -> torch.Tensor:
-    """Top-level function (picklable) for multiprocessing. Loads a single FLAC file."""
-    import torch
+    """Load a single FLAC file into a (2, 836, W) spectrogram tensor."""
     from phase import Phase
 
     phase = Phase(y_reverse=True)
@@ -40,109 +43,152 @@ def _load_spectrogram(flac_path: str) -> torch.Tensor:
     return audio_tensor.float()
 
 
+def _load_frozen_encoder(checkpoint_path: str, device):
+    """Load WhipstrEncoder from checkpoint, freeze, and return."""
+    from whipstr.whipstr_encoder import WhipstrEncoder
+
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+    if isinstance(ckpt, dict) and "encoder_state_dict" in ckpt:
+        state_dict = ckpt["encoder_state_dict"]
+    elif isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        state_dict = ckpt["model_state_dict"]
+    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
+        state_dict = ckpt["state_dict"]
+    else:
+        state_dict = ckpt
+
+    encoder = WhipstrEncoder(window_size=11)
+    encoder.load_state_dict(state_dict)
+    encoder.to(device)
+
+    for param in encoder.parameters():
+        param.requires_grad = False
+    encoder.eval()
+
+    return encoder
+
+
 class SpectrogramWindowDataset(Dataset):
     """
-    Slices full spectrograms into non-overlapping (2, 11, 836) windows.
+    Slices full spectrograms into overlapping (2, 11, 836) windows with stride=1.
+
+    Each window is paired with the 64-dim token produced by the frozen encoder
+    when applied to that window.  Tokens are precomputed once; windows are
+    sliced lazily to avoid RAM duplication.
 
     Accepts either:
       - A list of (2, 836, W) float tensors, or
       - A TSV path string (delegates loading to WhipstrTSVSpeechDataset)
 
-    Each __getitem__ returns (window, cond_vec) where:
-      - window  : torch.Tensor of shape (2, 11, 836)
-      - cond_vec: torch.Tensor of shape (64,)
-                  [position_norm, mean_ch0, std_ch0, mean_ch1, std_ch1, 0…0]
+    Each __getitem__ returns (window, token) where:
+      - window : torch.Tensor of shape (2, 11, 836)
+      - token  : torch.Tensor of shape (64,)
     """
 
-    WINDOW_TIME = 11   # time frames per window
-    COND_DIM    = 64   # conditioning vector length
+    WINDOW_TIME = 11   # time frames per window (matches encoder window_size)
+    STRIDE      = 1    # overlap stride (matches encoder stride)
+    COND_DIM    = 64   # token dimension
 
-    def __init__(self, source: Union[str, List[torch.Tensor]], limit=0):
+    def __init__(
+        self,
+        source: Union[str, List[torch.Tensor]],
+        encoder_checkpoint_path: str,
+        limit: int = 0,
+        device: str = "cpu",
+    ):
         """
         Args:
             source: TSV file path (str) or list of (2, 836, W) tensors.
+            encoder_checkpoint_path: Path to a WhipstrEncoder checkpoint.
+            limit: Maximum number of FLAC files to load from TSV.
+            device: Torch device for encoder inference.
         """
+        self.device = torch.device(device)
+
+        # ── Load spectrograms (serial, with progress bar) ──────────────────
         if isinstance(source, str):
             from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
+
             tsv_ds = WhipstrTSVSpeechDataset(source, limit=limit)
             flac_paths = [tsv_ds.samples[i][0] for i in range(len(tsv_ds))]
 
-            # First file must be loaded serially to initialise Phase state
-            first = _load_spectrogram(flac_paths[0])
-            rest = flac_paths[1:]
+            try:
+                from tqdm import tqdm
+                pbar = tqdm(total=len(flac_paths), desc="Loading spectrograms")
+            except ImportError:
+                pbar = None
 
-            if rest:
-                # sf.read and numpy FFT release the GIL, so threads get real parallelism
-                with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
-                    remaining = list(pool.map(_load_spectrogram, rest))
-            else:
-                remaining = []
-
-            spectrograms = [first] + remaining
+            spectrograms = []
+            for fp in flac_paths:
+                spectrograms.append(_load_spectrogram(fp))
+                if pbar:
+                    pbar.update(1)
+            if pbar:
+                pbar.close()
         elif isinstance(source, list):
             spectrograms = source
         else:
             raise TypeError(
-                f"source must be a str (TSV path) or list of tensors, got {type(source).__name__}"
+                f"source must be a str (TSV path) or list of tensors, "
+                f"got {type(source).__name__}"
             )
 
-        # Build flat index: list of (spectrogram_tensor, window_index, total_windows)
-        self._windows: List[tuple] = []
+        # ── Load and freeze encoder ────────────────────────────────────────
+        self.encoder = _load_frozen_encoder(encoder_checkpoint_path, self.device)
+
+        # ── Build index and precompute tokens ──────────────────────────────
+        self._specs: List[torch.Tensor] = []
+        self._tokens: List[torch.Tensor] = []
+        self._index: List[Tuple[int, int]] = []  # (spec_idx, w_idx)
+
         for spec in spectrograms:
-            spec = spec.float()
+            spec = spec.float().to(self.device)
             if spec.ndim != 3 or spec.shape[0] != 2 or spec.shape[1] != 836:
                 raise ValueError(
-                    f"Each spectrogram must have shape (2, 836, W), got {tuple(spec.shape)}"
+                    f"Each spectrogram must have shape (2, 836, W), "
+                    f"got {tuple(spec.shape)}"
                 )
-            W = spec.shape[2]
-            n_windows = W // self.WINDOW_TIME
-            if n_windows == 0:
-                raise ValueError(
-                    f"Spectrogram width {W} is too small to extract even one window of {self.WINDOW_TIME} frames"
-                )
-            for w_idx in range(n_windows):
-                self._windows.append((spec, w_idx, n_windows))
 
-    # ------------------------------------------------------------------
+            W = spec.shape[2]
+            T = W - self.WINDOW_TIME + 1  # overlapping windows with stride=1
+            if T <= 0:
+                raise ValueError(
+                    f"Spectrogram width {W} is too small to extract even one "
+                    f"window of {self.WINDOW_TIME} frames"
+                )
+
+            self._specs.append(spec)
+
+            # Precompute tokens: feed entire spectrogram → encoder outputs (1, T, 64)
+            with torch.no_grad():
+                tokens = self.encoder(spec.unsqueeze(0))  # (1, T, 64)
+            self._tokens.append(tokens.squeeze(0).cpu())  # (T, 64) → host
+
+            for w_idx in range(T):
+                self._index.append((len(self._specs) - 1, w_idx))
+
+        # Move specs back to host to free GPU memory
+        for i in range(len(self._specs)):
+            self._specs[i] = self._specs[i].cpu()
+
+    # ----------------------------------------------------------------------
+
     def __len__(self) -> int:
-        return len(self._windows)
+        return len(self._index)
 
     def __getitem__(self, idx: int):
-        if idx < 0 or idx >= len(self._windows):
-            raise IndexError(f"Index {idx} out of range for dataset of size {len(self._windows)}")
+        if idx < 0 or idx >= len(self._index):
+            raise IndexError(
+                f"Index {idx} out of range for dataset of size {len(self._index)}"
+            )
 
-        spec, w_idx, n_windows = self._windows[idx]
+        spec_idx, w_idx = self._index[idx]
+        spec = self._specs[spec_idx]
+        token = self._tokens[spec_idx][w_idx]  # (64,)
 
-        # Slice time frames: spec is (2, 836, W); time axis is dim-2
-        t_start = w_idx * self.WINDOW_TIME
-        t_end   = t_start + self.WINDOW_TIME
-        # slice: (2, 836, 11)
-        raw = spec[:, :, t_start:t_end]
-        # transpose to (2, 11, 836)
-        window = raw.permute(0, 2, 1).contiguous()
+        # Slice overlapping window: spec is (2, 836, W); time axis is dim-2
+        window_raw = spec[:, :, w_idx:w_idx + self.WINDOW_TIME]  # (2, 836, 11)
+        window = window_raw.permute(0, 2, 1).contiguous()  # (2, 11, 836)
 
-        # Build conditioning vector (64 floats)
-        cond = self._build_cond(window, w_idx, n_windows)
-
-        return window, cond
-
-    # ------------------------------------------------------------------
-    def _build_cond(self, window: torch.Tensor, w_idx: int, n_windows: int) -> torch.Tensor:
-        """
-        Build a 64-float conditioning vector for a window.
-
-        Layout:
-          [0]  position_norm  = w_idx / max(n_windows - 1, 1)
-          [1]  mean_ch0
-          [2]  std_ch0
-          [3]  mean_ch1
-          [4]  std_ch1
-          [5..63] zeros
-        """
-        cond = torch.zeros(self.COND_DIM, dtype=torch.float32)
-        cond[0] = w_idx / max(n_windows - 1, 1)
-        cond[1] = window[0].mean()
-        cond[2] = window[0].std()
-        cond[3] = window[1].mean()
-        cond[4] = window[1].std()
-        return cond
+        return window, token
