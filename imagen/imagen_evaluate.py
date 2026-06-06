@@ -27,6 +27,10 @@ IMAGEN_CKPT  = "checkpoints/imagen/checkpoint_epoch_0100.pt"
 AUDIO_FILE   = "/home/m/Downloads/LJ001-0001.wav"
 DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
 WINDOW_SIZE  = 11
+# T_START: noise level to begin reverse diffusion from.
+# 999 = pure noise (ignore template), 0 = pure template (no diffusion).
+# Values around 800-900 give a good template-guided start.
+T_START      = 999
 OUTPUT_PATH  = "imagen_eval.png"
 
 
@@ -122,9 +126,23 @@ def main():
     # Posterior variance σ²_t = β_t * (1 - ᾱ_{t-1}) / (1 - ᾱ_t)
     posterior_var = betas * (1.0 - alpha_bar_prev) / (1.0 - alpha_bar).clamp(min=1e-8)
 
-    # ── Initialise canvas from noise ──────────────────────────────────────
-    data_std = float(gen.data_std)
-    X = torch.randn(2, HEIGHT, W, device=DEVICE) * data_std
+    sqrt_ab   = alpha_bar.sqrt()
+    sqrt_1mab = (1.0 - alpha_bar).sqrt()
+
+    # ── Initialise full canvas via make_start ─────────────────────────────
+    t_start = min(T_START, T - 1)
+    print(f"Starting from t_start={t_start} ({'pure noise' if t_start == T-1 else 'template-guided'})")
+
+    # Each overlapping window position gets its own make_start sample,
+    # then we average the overlapping contributions into a single canvas.
+    X       = torch.zeros(2, HEIGHT, W, device=DEVICE)
+    X_cnt   = torch.zeros(2, HEIGHT, W, device=DEVICE)
+    with torch.no_grad():
+        for w_idx in range(N):
+            Xw = gen.make_start(1, t_start, sqrt_ab, sqrt_1mab, torch.device(DEVICE))
+            X    [:, :, w_idx : w_idx + WINDOW_SIZE] += Xw.squeeze(0)
+            X_cnt[:, :, w_idx : w_idx + WINDOW_SIZE] += 1.0
+    X = X / X_cnt.clamp(min=1.0)
 
     # ── Reverse diffusion loop ────────────────────────────────────────────
     print(f"Running {T}-step reverse diffusion...")

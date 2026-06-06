@@ -68,6 +68,24 @@ class ImagenTrainer:
         self.optimizer = optim.Adam(self.generator.parameters(), lr=lr)
         self.mse = nn.MSELoss()
 
+    def compute_and_set_template(self, dataset) -> None:
+        """Compute mean spectrogram over the dataset and store in the generator.
+
+        Should be called once before training begins.
+
+        Args:
+            dataset: SpectrogramWindowDataset instance.
+        """
+        print("Computing dataset mean template...")
+        acc = torch.zeros(2, 836, 11)
+        n   = len(dataset)
+        for i in range(n):
+            w, _ = dataset[i]
+            acc += w.cpu()
+        template = acc / max(n, 1)   # (2, 836, 11)
+        self.generator.set_template(template.to(self.device))
+        print(f"Template set. mean abs value: {template.abs().mean().item():.4f}")
+
     def register_schedule(self, sqrt_ab: torch.Tensor, sqrt_1mab: torch.Tensor) -> None:
         """Move schedule tensors to device (called after device changes too)."""
         self.sqrt_ab    = sqrt_ab.to(self.device)     # (T,)
@@ -151,6 +169,10 @@ class ImagenTrainer:
     ) -> None:
         os.makedirs(output_dir, exist_ok=True)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=False)
+
+        # Compute template on first call if not already set
+        if not self.generator.has_template():
+            self.compute_and_set_template(dataset)
 
         for epoch in range(self.current_epoch, self.current_epoch + num_epochs):
             self.generator.train()
