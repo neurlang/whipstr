@@ -67,7 +67,7 @@ def collate_fn(batch):
     padded_images = []
     for img in images:
         if img.shape[2] < max_width:
-            padding = torch.zeros(2, 840, max_width - img.shape[2])
+            padding = torch.zeros(2, img.shape[1], max_width - img.shape[2])
             padded_img = torch.cat([img, padding], dim=2)
         else:
             padded_img = img
