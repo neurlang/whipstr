@@ -239,6 +239,7 @@ def main():
     print("   " + "-" * 56)
     
     recent_epoch_dirs = []  # track the 2 most recent epoch checkpoint dirs
+    global_batch_idx = 0
     
     for epoch in range(start_epoch, num_epochs):
         # Training
@@ -280,6 +281,13 @@ def main():
             
             train_loss += loss.item()
             num_batches += 1
+            global_batch_idx += 1
+            
+            if global_batch_idx % 1000 == 0:
+                ckpt_dir = f'models/checkpoint_batch_{global_batch_idx}'
+                save_checkpoint(encoder, transformer, optimizer, epoch + 1,
+                                0.0, ckpt_dir, vocab_list)
+                print(f"   Batch checkpoint saved at {global_batch_idx} batches")
         
         avg_train_loss = train_loss / num_batches
         
