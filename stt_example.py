@@ -83,6 +83,8 @@ def main():
     parser = argparse.ArgumentParser(description="Whipstr STT (ASR) - TSV Speech Example")
     parser.add_argument('--continue-pt', type=str, default=None,
                         help='Path to a .pt checkpoint file to resume training from')
+    parser.add_argument('--finetune-pt', type=str, default=None,
+                        help='Path to a .pt checkpoint for finetuning (ignores vocabulary size mismatches)')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -189,6 +191,22 @@ def main():
     print(f"   - Transformer: {transformer_params:,}")
     print(f"   - Total: {encoder_params + transformer_params:,}")
     
+    # Load finetune checkpoint if --finetune-pt was provided
+    if args.finetune_pt:
+        print(f"\n6. Loading finetune checkpoint from {args.finetune_pt}")
+        finetune_checkpoint = torch.load(args.finetune_pt, map_location=device)
+        state_dict = finetune_checkpoint["transformer_state_dict"]
+        model_dict = transformer.state_dict()
+        filtered_state = {
+            k: v
+            for k, v in state_dict.items()
+            if k in model_dict and model_dict[k].shape == v.shape
+        }
+        missing, unexpected = transformer.load_state_dict(filtered_state, strict=False)
+        print(f"   Missing: {missing}")
+        print(f"   Unexpected: {unexpected}")
+        print(f"   Loaded {len(filtered_state)}/{len(state_dict)} transformer parameters")
+    
     # Step 4: Setup optimizer and loss
     print(f"\n5. Setting Up Training")
     optimizer = optim.Adam(
@@ -235,7 +253,8 @@ def main():
         print(f"   Baseline val_accuracy: {best_val_accuracy:.4f}")
 
     # Step 5: Training loop
-    print(f"\n{'7' if args.continue_pt else '6'}. Training for epochs {start_epoch + 1}–{num_epochs}")
+    step_num = 6 + (1 if args.continue_pt else 0) + (1 if args.finetune_pt else 0)
+    print(f"\n{step_num}. Training for epochs {start_epoch + 1}–{num_epochs}")
     print("   " + "-" * 56)
     
     recent_epoch_dirs = []  # track the 2 most recent epoch checkpoint dirs
@@ -356,7 +375,8 @@ def main():
     print("   Training complete!")
     
     # Step: Inference on a test sample
-    print(f"\n{'8' if args.continue_pt else '7'}. Inference on Test Sample")
+    step_num = 7 + (1 if args.continue_pt else 0) + (1 if args.finetune_pt else 0)
+    print(f"\n{step_num}. Inference on Test Sample")
     
     encoder.eval()
     transformer.eval()
