@@ -200,16 +200,18 @@ class WhipstrTransformer(nn.Module):
             else:
                 raise RuntimeError(f"Error during transformer forward pass: {str(e)}") from e
     
-    def generate(self, encoder_tokens, max_length, start_token):
+    def generate(self, encoder_tokens, max_length, start_token, eos_token=None):
         """Auto-regressive generation for inference.
         
         Args:
             encoder_tokens: torch.Tensor [batch, T, self.input_values] from CNN encoder
             max_length: Maximum number of tokens to generate
-            start_token: Special token to begin generation (default: self.input_values for backward compatibility)
+            start_token: Special token to begin generation
+            eos_token: Token that signals end-of-sequence (stops generation early).
+                        Defaults to start_token if not provided.
         
         Returns:
-            torch.LongTensor [batch, max_length] predicted tokens
+            torch.LongTensor [batch, N] predicted tokens, where N <= max_length
         """
         batch_size = encoder_tokens.size(0)
         device = encoder_tokens.device
@@ -219,6 +221,9 @@ class WhipstrTransformer(nn.Module):
             raise ValueError(f"encoder_tokens must be 3D [batch, T, self.input_values], got shape {encoder_tokens.shape}")
         if encoder_tokens.size(2) != self.input_values:
             raise ValueError(f"encoder_tokens must have self.input_values features, got {encoder_tokens.size(2)}")
+        
+        if eos_token is None:
+            eos_token = start_token
         
         # Encode once
         encoder_out = self.encoder_projection(encoder_tokens)
@@ -253,9 +258,13 @@ class WhipstrTransformer(nn.Module):
             
             # Append to generated sequence
             generated = torch.cat([generated, next_token], dim=1)
+            
+            # Stop early if all items in batch predict the EOS token
+            if (next_token == eos_token or next_token == 0).all():
+                break
         
         # Remove start token and return only generated output
-        return generated[:, 1:]  # [batch, max_length]
+        return generated[:, 1:]  # [batch, N] where N <= max_length
     
     def _generate_square_subsequent_mask(self, sz):
         """Generate causal mask for auto-regressive generation.
