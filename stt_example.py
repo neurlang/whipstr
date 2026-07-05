@@ -48,7 +48,7 @@ def solution_string_to_tensor(solution_strings, char_to_idx, device):
     max_len = max(len(c) for c in char_lists)
     padded = []
     for chars in char_lists:
-        padded_seq = chars + [0] * (max_len - len(chars))
+        padded_seq = chars + [0] * (max_len - len(chars) + 1)
         padded.append(padded_seq)
     return torch.tensor(padded, dtype=torch.long, device=device)
 
