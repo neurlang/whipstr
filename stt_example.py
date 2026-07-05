@@ -247,8 +247,9 @@ def main():
                 decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
                 logits = transformer(encoder_tokens, decoder_input)
                 predictions = torch.argmax(logits, dim=-1)
-                total_correct += (predictions == targets).sum().item()
-                total_chars += batch_size_actual * seq_len
+                mask = targets != 0
+                total_correct += ((predictions == targets) & mask).sum().item()
+                total_chars += mask.sum().item()
         best_val_accuracy = total_correct / max(total_chars, 1)
         print(f"   Baseline val_accuracy: {best_val_accuracy:.4f}")
 
@@ -340,9 +341,10 @@ def main():
                 
                 # Accuracy
                 predictions = torch.argmax(logits, dim=-1)
-                correct = (predictions == targets).sum().item()
+                mask = targets != 0
+                correct = ((predictions == targets) & mask).sum().item()
                 total_correct += correct
-                total_chars += batch_size_actual * seq_len
+                total_chars += mask.sum().item()
         
         avg_val_loss = val_loss / max(num_val_batches, 1)
         val_accuracy = total_correct / max(total_chars, 1)

@@ -156,9 +156,10 @@ def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, v
 
             # Compute accuracy
             predictions = torch.argmax(logits, dim=-1)
-            correct = (predictions == targets).sum().item()
+            mask = targets != 0
+            correct = ((predictions == targets) & mask).sum().item()
             total_correct += correct
-            total_chars += batch_size * seq_len
+            total_chars += mask.sum().item()
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     accuracy = total_correct / total_chars if total_chars > 0 else 0.0
