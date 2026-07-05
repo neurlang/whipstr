@@ -102,13 +102,14 @@ class WhipstrTransformer(nn.Module):
         # Output projection to vocabulary logits
         self.output_projection = nn.Linear(d_model, vocab_size)
     
-    def forward(self, encoder_tokens, target_digits, target_mask=None):
+    def forward(self, encoder_tokens, target_digits, target_mask=None, encoder_padding_mask=None):
         """Forward pass with teacher forcing.
         
         Args:
             encoder_tokens: torch.Tensor [batch, T, self.input_values] from CNN encoder
             target_digits: torch.LongTensor [batch, N] previously generated tokens
             target_mask: torch.Tensor [N, N] causal mask for auto-regressive generation
+            encoder_padding_mask: optional torch.BoolTensor [batch, T] with True at padding positions
         
         Returns:
             torch.Tensor [batch, N, vocab_size] logits for each position
@@ -162,7 +163,10 @@ class WhipstrTransformer(nn.Module):
             # Encoder path
             encoder_out = self.encoder_projection(encoder_tokens)  # [batch, T, d_model]
             encoder_out = self.encoder_pos_encoding(encoder_out)
-            encoder_memory = self.transformer_encoder(encoder_out)  # [batch, T, d_model]
+            encoder_memory = self.transformer_encoder(
+                encoder_out,
+                src_key_padding_mask=encoder_padding_mask
+            )  # [batch, T, d_model]
             
             # Decoder path
             decoder_input = self.decoder_embedding(target_digits)  # [batch, N, d_model]
@@ -177,7 +181,8 @@ class WhipstrTransformer(nn.Module):
             decoder_out = self.transformer_decoder(
                 decoder_input,
                 encoder_memory,
-                tgt_mask=target_mask
+                tgt_mask=target_mask,
+                memory_key_padding_mask=encoder_padding_mask
             )  # [batch, N, d_model]
             
             # Project to vocabulary logits

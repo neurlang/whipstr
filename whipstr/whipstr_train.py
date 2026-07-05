@@ -17,10 +17,12 @@ import os
 def collate_fn(batch):
     """Custom collate function to handle variable-width spectrograms.
 
-    Pads spectrograms to the maximum width in the batch.
+    Pads spectrograms to the maximum width in the batch and returns
+    original widths for constructing the encoder padding mask.
     """
     images, solutions = zip(*batch)
-    max_width = max(img.shape[2] for img in images)
+    widths = torch.tensor([img.shape[2] for img in images])
+    max_width = widths.max().item()
     padded_images = []
     for img in images:
         if img.shape[2] < max_width:
@@ -30,7 +32,7 @@ def collate_fn(batch):
             padded_img = img
         padded_images.append(padded_img)
     images_tensor = torch.stack(padded_images, dim=0)
-    return images_tensor, solutions
+    return images_tensor, solutions, widths
 
 
 def solution_string_to_tensor(solution_strings, char_to_idx, device):
@@ -53,7 +55,7 @@ def solution_string_to_tensor(solution_strings, char_to_idx, device):
     return torch.tensor(padded, dtype=torch.long, device=device)
 
 
-def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, char_to_idx, vocab_size, start_token_idx, clip_grad=1.0):
+def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, char_to_idx, vocab_size, start_token_idx, window_size, clip_grad=1.0):
     """Train for one epoch.
 
     Args:
@@ -66,6 +68,7 @@ def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, 
         char_to_idx: Dict mapping characters to indices
         vocab_size: Size of the vocabulary (including padding)
         start_token_idx: Index of the start token
+        window_size: Window size used by the encoder (for mask computation)
         clip_grad: Gradient clipping value (default: 1.0)
 
     Returns:
@@ -77,8 +80,9 @@ def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, 
     total_loss = 0.0
     num_batches = 0
 
-    for batch_idx, (images, solution_strings) in enumerate(dataloader):
+    for batch_idx, (images, solution_strings, widths) in enumerate(dataloader):
         images = images.to(device)
+        widths = widths.to(device)
         targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
         batch_size, seq_len = targets.shape
 
@@ -86,9 +90,13 @@ def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, 
 
         # Forward pass
         encoder_tokens = encoder(images)
+        # Build encoder padding mask: True at positions beyond the sample's real windows
+        T = encoder_tokens.shape[1]
+        real_windows = widths - window_size + 1
+        encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
         start_tokens = torch.full((batch_size, 1), start_token_idx, dtype=torch.long, device=device)
         decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-        logits = transformer(encoder_tokens, decoder_input)
+        logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
 
         # Compute loss
         logits_flat = logits.reshape(-1, vocab_size + 1)
@@ -110,7 +118,7 @@ def train_epoch(encoder, transformer, dataloader, optimizer, criterion, device, 
     return total_loss / num_batches if num_batches > 0 else 0.0
 
 
-def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, vocab_size, start_token_idx):
+def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, vocab_size, start_token_idx, window_size):
     """Evaluate on validation set.
 
     Args:
@@ -122,6 +130,7 @@ def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, v
         char_to_idx: Dict mapping characters to indices
         vocab_size: Size of the vocabulary (including padding)
         start_token_idx: Index of the start token
+        window_size: Window size used by the encoder (for mask computation)
 
     Returns:
         tuple: (average_loss, accuracy)
@@ -135,16 +144,21 @@ def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, v
     num_batches = 0
 
     with torch.no_grad():
-        for images, solution_strings in dataloader:
+        for images, solution_strings, widths in dataloader:
             images = images.to(device)
+            widths = widths.to(device)
             targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
             batch_size, seq_len = targets.shape
 
             # Forward pass
             encoder_tokens = encoder(images)
+            # Build encoder padding mask: True at positions beyond the sample's real windows
+            T = encoder_tokens.shape[1]
+            real_windows = widths - window_size + 1
+            encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
             start_tokens = torch.full((batch_size, 1), start_token_idx, dtype=torch.long, device=device)
             decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-            logits = transformer(encoder_tokens, decoder_input)
+            logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
 
             # Compute loss
             logits_flat = logits.reshape(-1, vocab_size + 1)
@@ -238,8 +252,8 @@ def main():
     # Training loop
     print("Starting training...")
     for epoch in range(num_epochs):
-        train_loss = train_epoch(encoder, transformer, train_loader, optimizer, criterion, device, char_to_idx, vocab_size, start_token_idx)
-        val_loss, val_accuracy = validate(encoder, transformer, val_loader, criterion, device, char_to_idx, vocab_size, start_token_idx)
+        train_loss = train_epoch(encoder, transformer, train_loader, optimizer, criterion, device, char_to_idx, vocab_size, start_token_idx, window_size)
+        val_loss, val_accuracy = validate(encoder, transformer, val_loader, criterion, device, char_to_idx, vocab_size, start_token_idx, window_size)
 
         scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]['lr']

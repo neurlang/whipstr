@@ -56,12 +56,12 @@ def solution_string_to_tensor(solution_strings, char_to_idx, device):
 def collate_fn(batch):
     """Custom collate function to handle variable-width spectrograms.
     
-    Pads spectrograms to the maximum width in the batch.
+    Pads spectrograms to the maximum width in the batch and returns
+    original widths for constructing the encoder padding mask.
     """
     images, solutions = zip(*batch)
-    
-    # Find max width
-    max_width = max(img.shape[2] for img in images)
+    widths = torch.tensor([img.shape[2] for img in images])
+    max_width = widths.max().item()
     
     # Pad images to max width
     padded_images = []
@@ -76,7 +76,7 @@ def collate_fn(batch):
     # Stack images
     images_tensor = torch.stack(padded_images, dim=0)
     
-    return images_tensor, solutions
+    return images_tensor, solutions, widths
 
 
 def main():
@@ -238,14 +238,19 @@ def main():
         total_correct = 0
         total_chars = 0
         with torch.no_grad():
-            for images, solution_strings in tqdm(val_loader, desc="   Baseline eval"):
+            for images, solution_strings, widths in tqdm(val_loader, desc="   Baseline eval"):
                 images = images.to(device)
+                widths = widths.to(device)
                 targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
                 batch_size_actual, seq_len = targets.shape
                 encoder_tokens = encoder(images)
+                # Build encoder padding mask: True at positions beyond the sample's real windows
+                T = encoder_tokens.shape[1]
+                real_windows = widths - window_size + 1
+                encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
                 start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
                 decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-                logits = transformer(encoder_tokens, decoder_input)
+                logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
                 predictions = torch.argmax(logits, dim=-1)
                 mask = targets != 0
                 total_correct += ((predictions == targets) & mask).sum().item()
@@ -269,9 +274,10 @@ def main():
         train_loss = 0.0
         num_batches = 0
         
-        for batch_idx, (images, solution_strings) in enumerate(tqdm(train_loader)):
+        for batch_idx, (images, solution_strings, widths) in enumerate(tqdm(train_loader)):
             # Move to device
             images = images.to(device)
+            widths = widths.to(device)
             targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
             batch_size_actual, seq_len = targets.shape
             
@@ -280,13 +286,17 @@ def main():
             
             # Forward pass
             encoder_tokens = encoder(images)
+            # Build encoder padding mask: True at positions beyond the sample's real windows
+            T = encoder_tokens.shape[1]
+            real_windows = widths - window_size + 1
+            encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
             
             # Prepare decoder input (shift targets, prepend start token)
             start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
             decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
             
             # Transformer forward
-            logits = transformer(encoder_tokens, decoder_input)
+            logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
             
             # Compute loss
             logits_flat = logits.reshape(-1, vocab_size + 1)
@@ -321,16 +331,21 @@ def main():
         num_val_batches = 0
         
         with torch.no_grad():
-            for images, solution_strings in tqdm(val_loader):
+            for images, solution_strings, widths in tqdm(val_loader):
                 images = images.to(device)
+                widths = widths.to(device)
                 targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
                 batch_size_actual, seq_len = targets.shape
                 
                 # Forward pass
                 encoder_tokens = encoder(images)
+                # Build encoder padding mask: True at positions beyond the sample's real windows
+                T = encoder_tokens.shape[1]
+                real_windows = widths - window_size + 1
+                encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
                 start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
                 decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-                logits = transformer(encoder_tokens, decoder_input)
+                logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
                 
                 # Loss
                 logits_flat = logits.reshape(-1, vocab_size + 1)
