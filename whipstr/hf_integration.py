@@ -47,7 +47,8 @@ class WhipstrConfig(PretrainedConfig):
     def __init__(
         self, vocab_size=None, stride=1, window_size=11,
         d_model=256, nhead=8, num_encoder_layers=4,
-        num_decoder_layers=4, dim_feedforward=1024, dropout=0.1, **kwargs
+        num_decoder_layers=4, dim_feedforward=1024, dropout=0.1,
+        encoder_embed_dim=64, **kwargs
     ):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
@@ -59,6 +60,7 @@ class WhipstrConfig(PretrainedConfig):
         self.num_decoder_layers = num_decoder_layers
         self.dim_feedforward = dim_feedforward
         self.dropout = dropout
+        self.encoder_embed_dim = encoder_embed_dim
 
 
 class WhipstrTokenizer(PreTrainedTokenizer):

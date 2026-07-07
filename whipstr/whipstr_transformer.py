@@ -255,7 +255,7 @@ class WhipstrTransformer(nn.Module):
             
             # Sample next token (greedy)
             next_token = torch.argmax(logits, dim=-1, keepdim=True)  # [batch, 1]
-            
+
             # Append to generated sequence
             generated = torch.cat([generated, next_token], dim=1)
             
