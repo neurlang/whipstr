@@ -9,7 +9,7 @@ Provides:
 Usage:
 
     # 1. Convert existing checkpoint to HF format
-    python whipstr/hf_integration.py --checkpoint checkpoints/best_model.pt --model-json models/model.json
+    uv run --with phase-spectrogram --with numpy --with torch --with scipy --with transformers python3 -m whipstr.hf_integration --checkpoint checkpoints/best_model.pt --model-json models/model.json
     
     # 2. Upload to Hugging Face Hub
     huggingface-cli login
