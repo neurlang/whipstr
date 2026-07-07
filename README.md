@@ -37,10 +37,10 @@ Four model sizes are configurable via `--variant`:
 
 | Variant | Encoder dim | d_model | Heads | Enc/Dec layers | Feedforward | **Params** |
 |---|---|---|---|---|---|---|
-| whipstr-small | 32 | 128 | 4 | 2/2 | 512 | -M |
+| whipstr-small | 32 | 128 | 4 | 2/2 | 512 | 8M |
 | whipstr-base | 64 | 256 | 8 | 4/4 | 1024 | 17M |
 | whipstr-medium | 128 | 512 | 8 | 6/6 | 2048 | 51M |
-| whipstr-large | 192 | 768 | 12 | 6/6 | 3072 | -M |
+| whipstr-large | 192 | 768 | 12 | 6/6 | 3072 | 106M |
 
 ## Usage
 
