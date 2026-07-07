@@ -28,7 +28,6 @@ VARIANT_CONFIGS = {
         "dropout": 0.1,
         "stride": 1,
         "window_size": 11,
-        "encoder_fc2": 32,
     },
     "whipstr-base": {
         "encoder_embed_dim": 64,
@@ -40,7 +39,6 @@ VARIANT_CONFIGS = {
         "dropout": 0.1,
         "stride": 1,
         "window_size": 11,
-        "encoder_fc2": 64,
     },
     "whipstr-medium": {
         "encoder_embed_dim": 128,
@@ -52,7 +50,6 @@ VARIANT_CONFIGS = {
         "dropout": 0.1,
         "stride": 1,
         "window_size": 11,
-        "encoder_fc2": 128,
     },
     "whipstr-large": {
         "encoder_embed_dim": 192,
@@ -64,7 +61,6 @@ VARIANT_CONFIGS = {
         "dropout": 0.15,
         "stride": 1,
         "window_size": 11,
-        "encoder_fc2": 192,
     },
 }
 
@@ -125,24 +121,6 @@ def get_hf_config(variant_name, vocab_size=None):
         dropout=cfg["dropout"],
         encoder_embed_dim=cfg["encoder_embed_dim"],
     )
-
-
-def get_encoder_kwargs(variant_name):
-    """Get encoder-specific kwargs (channels, fc sizes, output dim).
-
-    Args:
-        variant_name: One of "whipstr-small", "whipstr-base",
-                      "whipstr-medium", "whipstr-large".
-
-    Returns:
-        Dict with encoder_embed_dim, encoder_channels, encoder_fc.
-    """
-    cfg = get_variant_config(variant_name)
-    return {
-        "encoder_embed_dim": cfg["encoder_embed_dim"],
-        "encoder_channels": cfg["encoder_channels"],
-        "encoder_fc": cfg["encoder_fc"],
-    }
 
 
 def print_variant_table():

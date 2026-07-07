@@ -332,7 +332,10 @@ class WhipstrForConditionalGeneration(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         
-        self.encoder = WhipstrEncoder(stride=config.stride, window_size=config.window_size)
+        self.encoder = WhipstrEncoder(
+            stride=config.stride, window_size=config.window_size,
+            output_values=config.encoder_embed_dim,
+        )
         self.transformer = WhipstrTransformer(
             d_model=config.d_model,
             nhead=config.nhead,
@@ -340,7 +343,8 @@ class WhipstrForConditionalGeneration(PreTrainedModel):
             num_decoder_layers=config.num_decoder_layers,
             dim_feedforward=config.dim_feedforward,
             dropout=config.dropout,
-            vocab_size=config.vocab_size
+            vocab_size=config.vocab_size,
+            input_values=config.encoder_embed_dim,
         )
         
         self.post_init()
@@ -358,7 +362,7 @@ class WhipstrForConditionalGeneration(PreTrainedModel):
         return self.transformer.generate(encoder_tokens, max_length=max_length, start_token=start_token)
 
 
-def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None):
+def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None, variant=None):
     os.makedirs(output_dir, exist_ok=True)
     
     with open(model_json_path) as f:
@@ -366,11 +370,15 @@ def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None)
         vocab_list = vocab_data["Vocab"]
         vocab_size = vocab_size if vocab_size else (len(vocab_list) + 2)
     
-    config = WhipstrConfig(
-        vocab_size=vocab_size, stride=1, window_size=11,
-        d_model=256, nhead=8, num_encoder_layers=4,
-        num_decoder_layers=4, dim_feedforward=1024, dropout=0.1
-    )
+    if variant:
+        from .whipstr_variants import get_hf_config
+        config = get_hf_config(variant, vocab_size=vocab_size)
+    else:
+        config = WhipstrConfig(
+            vocab_size=vocab_size, stride=1, window_size=11,
+            d_model=256, nhead=8, num_encoder_layers=4,
+            num_decoder_layers=4, dim_feedforward=1024, dropout=0.1
+        )
     
     model = WhipstrForConditionalGeneration(config)
     
@@ -396,14 +404,18 @@ def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None)
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Convert Whisper STT checkpoint to Hugging Face format")
+    from .whipstr_variants import list_variants
+    parser = argparse.ArgumentParser(description="Convert Whipstr STT checkpoint to Hugging Face format")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to checkpoint.pt")
     parser.add_argument("--model-json", type=str, required=True, help="Path to model.json (vocab file)")
     parser.add_argument("--output-dir", type=str, default="./hf_whipstr", help="Output directory for HF model")
+    parser.add_argument("--variant", type=str, default=None,
+                        choices=list_variants(),
+                        help="Model variant (if omitted, uses hardcoded base config)")
     
     args = parser.parse_args()
     
-    convert_to_hf(args.checkpoint, args.model_json, args.output_dir)
+    convert_to_hf(args.checkpoint, args.model_json, args.output_dir, variant=args.variant)
     
     print("\nTo upload to Hugging Face Hub:")
     print("  huggingface-cli login")

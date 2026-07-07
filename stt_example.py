@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 from whipstr.whipstr_encoder import WhipstrEncoder
 from whipstr.whipstr_transformer import WhipstrTransformer
+from whipstr.whipstr_variants import get_variant_config, list_variants
 
 
 def save_vocab(vocab_list, path):
@@ -85,18 +86,24 @@ def main():
                         help='Path to a .pt checkpoint file to resume training from')
     parser.add_argument('--finetune-pt', type=str, default=None,
                         help='Path to a .pt checkpoint for finetuning (ignores vocabulary size mismatches)')
+    parser.add_argument('--variant', type=str, default='whipstr-base',
+                        choices=list_variants(),
+                        help='Model variant (default: whipstr-base)')
     args = parser.parse_args()
 
     print("=" * 60)
-    print("Whipstr STT (ASR) - TSV Speech Example")
+    print(f"Whipstr STT (ASR) - TSV Speech Example [{args.variant}]")
     print("=" * 60)
     
     # Configuration
     batch_size = 1  # Smaller batch size for faster demo
     num_epochs = 3600  # Training epochs
     learning_rate = 0.00002
-    stride = 1  # Stride for CNN encoder
-    window_size = 11  # Window size for encoder
+    
+    # Load variant config (stride, window_size, d_model, etc.)
+    variant_cfg = get_variant_config(args.variant)
+    stride = variant_cfg["stride"]
+    window_size = variant_cfg["window_size"]
     
     # Device handling
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -160,27 +167,33 @@ def main():
     print(f"   Number of validation batches: {len(val_loader)}")
     
     # Step 3: Initialize models
-    print(f"\n4. Initializing Models")
+    print(f"\n4. Initializing Models ({args.variant})")
     
-    encoder = WhipstrEncoder(stride=stride, window_size=window_size).to(device)
+    encoder = WhipstrEncoder(
+        stride=stride, window_size=window_size,
+        output_values=variant_cfg["encoder_embed_dim"],
+    ).to(device)
     print(f"   CNN Encoder:")
     print(f"   - Stride: {stride}")
     print(f"   - Window size: {window_size}x{window_size}")
+    print(f"   - Output values: {variant_cfg['encoder_embed_dim']}")
     
     transformer = WhipstrTransformer(
-        d_model=256,
-        nhead=8,
-        num_encoder_layers=4,
-        num_decoder_layers=4,
-        dim_feedforward=1024,
-        dropout=0.1,
-        vocab_size=vocab_size + 1  # +1 for start token
+        d_model=variant_cfg["d_model"],
+        nhead=variant_cfg["nhead"],
+        num_encoder_layers=variant_cfg["num_encoder_layers"],
+        num_decoder_layers=variant_cfg["num_decoder_layers"],
+        dim_feedforward=variant_cfg["dim_feedforward"],
+        dropout=variant_cfg["dropout"],
+        vocab_size=vocab_size + 1,  # +1 for start token
+        input_values=variant_cfg["encoder_embed_dim"],
     ).to(device)
     print(f"   Transformer:")
-    print(f"   - Model dimension: 256")
-    print(f"   - Attention heads: 8")
-    print(f"   - Encoder layers: 4")
-    print(f"   - Decoder layers: 4")
+    print(f"   - Model dimension: {variant_cfg['d_model']}")
+    print(f"   - Attention heads: {variant_cfg['nhead']}")
+    print(f"   - Encoder layers: {variant_cfg['num_encoder_layers']}")
+    print(f"   - Decoder layers: {variant_cfg['num_decoder_layers']}")
+    print(f"   - Feedforward dim: {variant_cfg['dim_feedforward']}")
     print(f"   - Vocabulary size: {vocab_size + 1}")
     
     # Count parameters

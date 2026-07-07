@@ -14,6 +14,7 @@ import torch
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 from whipstr.whipstr_encoder import WhipstrEncoder
 from whipstr.whipstr_transformer import WhipstrTransformer
+from whipstr.whipstr_variants import get_variant_config, list_variants
 
 # Shared WER transform: lowercase, strip punctuation, normalize whitespace
 wer_transform = tr.Compose([
@@ -37,6 +38,9 @@ def main():
                         help='Limit number of samples (0 = all)')
     parser.add_argument('--force-cpu', type=bool, default=False,
                         help='Force cpu (default False)')
+    parser.add_argument('--variant', type=str, default='whipstr-base',
+                        choices=list_variants(),
+                        help='Model variant (default: whipstr-base)')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() and not args.force_cpu else 'cpu')
@@ -67,14 +71,24 @@ def main():
     vocab_size = len(char_to_idx) + 1  # +1 for padding
     start_token_idx = vocab_size
 
-    # Instantiate models (must match training architecture)
-    encoder = WhipstrEncoder(stride=1, window_size=11).to(device)
-    transformer = WhipstrTransformer(
-        d_model=256, nhead=8,
-        num_encoder_layers=4, num_decoder_layers=4,
-        dim_feedforward=1024, dropout=0.1,
-        vocab_size=vocab_size + 1,
+    # Instantiate models from variant config
+    cfg = get_variant_config(args.variant, vocab_size=vocab_size + 1)
+    encoder = WhipstrEncoder(
+        stride=cfg["stride"], window_size=cfg["window_size"],
+        output_values=cfg["encoder_embed_dim"],
     ).to(device)
+    transformer = WhipstrTransformer(
+        d_model=cfg["d_model"], nhead=cfg["nhead"],
+        num_encoder_layers=cfg["num_encoder_layers"],
+        num_decoder_layers=cfg["num_decoder_layers"],
+        dim_feedforward=cfg["dim_feedforward"],
+        dropout=cfg["dropout"],
+        vocab_size=cfg["vocab_size"],
+        input_values=cfg["encoder_embed_dim"],
+    ).to(device)
+    print(f"Variant: {args.variant}")
+    print(f"  encoder_embed_dim={cfg['encoder_embed_dim']}, d_model={cfg['d_model']}, "
+          f"nhead={cfg['nhead']}, layers={cfg['num_encoder_layers']}/{cfg['num_decoder_layers']}")
 
     # Load checkpoint
     print(f"Loading checkpoint: {args.model_pt}")
