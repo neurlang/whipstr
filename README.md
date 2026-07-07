@@ -11,36 +11,66 @@ pip install -r requirements.txt
 ## Project Structure
 
 ```
-whipstr/
+whipstr/                       # Core library package
+├── __init__.py                # Package exports (dataset, HF classes)
+├── hf_integration.py          # HuggingFace integration (config, tokenizer, feature extractor, model wrapper)
+├── whipstr_encoder.py         # CNN audio encoder
+├── whipstr_transformer.py     # Transformer seq-to-seq model
+├── whipstr_train.py           # Training pipeline
 ├── whipstr_tsv_speech_dataset.py # TSV speech dataset loader
-├── whipstr_encoder.py            # CNN audio encoder
-├── whipstr_transformer.py        # Transformer seq-to-seq model
-└── whipstr_train.py              # Training pipeline
+└── whipstr_variants.py        # Model variant configs (small/base/medium/large)
 
-tests/
-└── (test files)
+scripts/
+├── stt_example.py             # Training with variant support, checkpointing, WER eval
+├── stt_evaluate.py            # Evaluate a checkpoint with WER
+└── stt_infer_hf.py            # Inference via HuggingFace Hub model
 
-requirements.txt                  # Dependencies
+tests/                         # Property-based and unit tests
+└── ...
+
+requirements.txt               # Dependencies
 ```
+
+## Variants
+
+Four model sizes are configurable via `--variant`:
+
+| Variant | Encoder dim | d_model | Heads | Enc/Dec layers | Feedforward | **Params** |
+|---|---|---|---|---|---|---|
+| whipstr-small | 32 | 128 | 4 | 2/2 | 512 | -M |
+| whipstr-base | 64 | 256 | 8 | 4/4 | 1024 | 17M |
+| whipstr-medium | 128 | 512 | 8 | 6/6 | 2048 | 51M |
+| whipstr-large | 192 | 768 | 12 | 6/6 | 3072 | -M |
 
 ## Usage
 
-See `stt_example.py` for usage examples.
-
-## Training
-
 ```bash
-# Quick training example
-python stt_example.py
+# Train a model
+python stt_example.py --variant whipstr-base
 
-# Full training with improved hyperparameters
-python train_improved.py
+# Evaluate a checkpoint
+python stt_evaluate.py --model-pt checkpoints/best.pt --data data/TSV_SPEECH/speech.tsv
+
+# Inference via HuggingFace Hub
+python stt_infer_hf.py --audio audio.wav --model ./hf_whipstr
 ```
 
-## Documentation
+## HuggingFace Integration
 
-- [Changes Summary](doc/CHANGES_SUMMARY.txt) — Spectrogram height changes
-- [Fixes Summary](doc/FIXES_SUMMARY.md) — Training issue fixes
-- [Spectrogram Height Changes](doc/IMAGE_STRETCH_CHANGES.md) — Technical details on spectrogram resize
-- [Spectrogram Height Summary](doc/IMAGE_STRETCH_SUMMARY.md) — Implementation summary
-- [Quick Start (56px)](doc/QUICK_START_56PX.md) — Quick start guide
+Convert checkpoints to HF format and upload:
+
+```bash
+uv run --with phase-spectrogram --with numpy --with torch --with scipy --with transformers \
+  python -m whipstr.hf_integration \
+  --checkpoint checkpoints/best_model.pt --model-json models/model.json
+```
+
+Then use with `pipeline`:
+
+```python
+from transformers import pipeline
+pipe = pipeline("automatic-speech-recognition",
+                model="neuralang/en-whipstr-base-48khz-libritts-r",
+                trust_remote_code=True)
+transcription = pipe("audio.wav")
+```
