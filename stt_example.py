@@ -226,10 +226,10 @@ def main():
         list(encoder.parameters()) + list(transformer.parameters()),
         lr=learning_rate
     )
-    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    criterion = nn.CrossEntropyLoss()
     print(f"   Optimizer: Adam")
     print(f"   Learning rate: {learning_rate}")
-    print(f"   Loss function: CrossEntropyLoss (ignore_index=0)")
+    print(f"   Loss function: CrossEntropyLoss")
     
     # Load checkpoint if --continue-pt was provided
     start_epoch = 0
@@ -369,10 +369,9 @@ def main():
                 
                 # Accuracy
                 predictions = torch.argmax(logits, dim=-1)
-                mask = targets != 0
-                correct = ((predictions == targets) & mask).sum().item()
+                correct = (predictions == targets).sum().item()
                 total_correct += correct
-                total_chars += mask.sum().item()
+                total_chars += targets.numel()
         
         avg_val_loss = val_loss / max(num_val_batches, 1)
         val_accuracy = total_correct / max(total_chars, 1)

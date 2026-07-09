@@ -50,7 +50,7 @@ def solution_string_to_tensor(solution_strings, char_to_idx, device):
     max_len = max(len(c) for c in char_lists)
     padded = []
     for chars in char_lists:
-        padded_seq = chars + [0] * (max_len - len(chars))
+        padded_seq = chars + [0] * (max_len - len(chars) + 1)
         padded.append(padded_seq)
     return torch.tensor(padded, dtype=torch.long, device=device)
 
@@ -170,10 +170,9 @@ def validate(encoder, transformer, dataloader, criterion, device, char_to_idx, v
 
             # Compute accuracy
             predictions = torch.argmax(logits, dim=-1)
-            mask = targets != 0
-            correct = ((predictions == targets) & mask).sum().item()
+            correct = (predictions == targets).sum().item()
             total_correct += correct
-            total_chars += mask.sum().item()
+            total_chars += targets.numel()
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     accuracy = total_correct / total_chars if total_chars > 0 else 0.0
@@ -247,7 +246,7 @@ def main():
     )
 
     # Loss function (ignore padding token at index 0)
-    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    criterion = nn.CrossEntropyLoss()
 
     # Training loop
     print("Starting training...")
