@@ -2,6 +2,8 @@
 
 A deep learning automatic speech recognition (ASR) system for transcribing speech audio into text using transformer-based sequence-to-sequence models.
 
+<img width="1298" height="1212" alt="image" src="https://github.com/user-attachments/assets/da7abbe8-dde7-4b8a-9b12-5e8f0f62266f" />
+
 ## Installation
 
 ```bash
