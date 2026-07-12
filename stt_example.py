@@ -112,11 +112,6 @@ def main():
     num_epochs = 3600  # Training epochs
     learning_rate = 0.00002
     
-    # Load variant config (stride, window_size, d_model, etc.)
-    variant_cfg = get_variant_config(args.variant)
-    stride = variant_cfg["stride"]
-    window_size = variant_cfg["window_size"]
-    
     # Device handling
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\n1. Device Setup")
@@ -129,7 +124,7 @@ def main():
     
     # Build character vocabulary from full dataset, then restrict to training split
     all_chars = set()
-
+    
     dataset = WhipstrTSVSpeechDataset(
         tsv_path='data/TSV_SPEECH/speech.tsv',
         limit=10630,
@@ -172,6 +167,11 @@ def main():
     print(f"   - Spectrogram shape: {sample_image.shape}")
     print(f"   - Transcription: '{sample_solution}'")
     print(f"   - Spectrogram width: {sample_image.shape[2]} pixels")
+    
+    # Load variant config (stride, window_size, d_model, etc.) using computed vocab size
+    variant_cfg = get_variant_config(args.variant, vocab_size=transformer_vocab_size)
+    stride = variant_cfg["stride"]
+    window_size = variant_cfg["window_size"]
     
     # Step 2: Create dataloaders
     print(f"\n3. Creating DataLoaders")

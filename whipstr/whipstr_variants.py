@@ -8,9 +8,10 @@ Usage:
 
     from whipstr.whipstr_variants import get_variant_config, list_variants
 
-    config = get_variant_config("whipstr-base")
+    vocab_size = 286  # should match your tokenizer's output dimension
+    config = get_variant_config("whipstr-base", vocab_size=vocab_size)
     for name in list_variants():
-        cfg = get_variant_config(name)
+        cfg = get_variant_config(name, vocab_size=vocab_size)
         print(f"{name}: {cfg['d_model']}d, {cfg['num_encoder_layers']}enc/{cfg['num_decoder_layers']}dec")
 """
 
@@ -70,14 +71,13 @@ def list_variants():
     return list(VARIANT_CONFIGS.keys())
 
 
-def get_variant_config(variant_name, vocab_size=None):
+def get_variant_config(variant_name, vocab_size):
     """Get the full config dict for a variant.
 
     Args:
         variant_name: One of "whipstr-small", "whipstr-base",
                       "whipstr-medium", "whipstr-large".
-        vocab_size: Optional vocab_size override. If None, uses
-                    the default (43).
+        vocab_size: Vocabulary size (number of tokens). Required.
 
     Returns:
         Dict with all parameters needed to instantiate a model.
@@ -89,21 +89,18 @@ def get_variant_config(variant_name, vocab_size=None):
         )
 
     cfg = dict(VARIANT_CONFIGS[variant_name])
-    if vocab_size is not None:
-        cfg["vocab_size"] = vocab_size
-    else:
-        cfg["vocab_size"] = 43
+    cfg["vocab_size"] = vocab_size
 
     return cfg
 
 
-def get_hf_config(variant_name, vocab_size=None):
+def get_hf_config(variant_name, vocab_size):
     """Create a WhipstrConfig for a variant, suitable for HF save/load.
 
     Args:
         variant_name: One of "whipstr-small", "whipstr-base",
                       "whipstr-medium", "whipstr-large".
-        vocab_size: Optional vocab_size override.
+        vocab_size: Vocabulary size (number of tokens). Required.
 
     Returns:
         WhipstrConfig instance.
