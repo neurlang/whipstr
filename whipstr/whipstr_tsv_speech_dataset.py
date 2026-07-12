@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import os
 from phase import Phase
+from tqdm import tqdm
 
 
 class WhipstrTSVSpeechDataset(Dataset):
@@ -35,7 +36,7 @@ class WhipstrTSVSpeechDataset(Dataset):
         # Load TSV data
         self.samples = []
         with open(tsv_path, 'r', encoding='utf-8') as f:
-            for line in f:
+            for line in tqdm(f, desc="Loading dataset..."):
                 line = line.strip()
                 if not line:
                     continue
