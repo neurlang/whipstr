@@ -273,6 +273,10 @@ class WhipstrTransformer(nn.Module):
         Returns:
             torch.Tensor [sz, sz] with -inf in upper triangle
         """
-        mask = torch.triu(torch.ones(sz, sz), diagonal=1)
-        mask = mask.masked_fill(mask == 1, float('-inf'))
-        return mask
+        if not hasattr(self, '_causal_mask_cache'):
+            self._causal_mask_cache = {}
+        if sz not in self._causal_mask_cache:
+            mask = torch.triu(torch.ones(sz, sz), diagonal=1)
+            mask = mask.masked_fill(mask == 1, float('-inf'))
+            self._causal_mask_cache[sz] = mask
+        return self._causal_mask_cache[sz]
