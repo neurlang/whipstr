@@ -176,8 +176,8 @@ def main():
     # Step 2: Create dataloaders
     print(f"\n3. Creating DataLoaders")
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=32)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn, num_workers=32)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=32, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn, num_workers=32, pin_memory=True)
     
     print(f"   Batch size: {batch_size}")
     print(f"   Training samples: {train_size}")
@@ -271,8 +271,8 @@ def main():
         total_chars = 0
         with torch.no_grad():
             for images, solution_strings, widths in tqdm(val_loader, desc="   Baseline eval"):
-                images = images.to(device)
-                widths = widths.to(device)
+                images = images.to(device, non_blocking=True)
+                widths = widths.to(device, non_blocking=True)
                 targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
                 encoder_tokens = encoder(images)
                 # Build encoder padding mask: True at positions beyond the sample's real windows
@@ -314,8 +314,8 @@ def main():
         
         for batch_idx, (images, solution_strings, widths) in enumerate(tqdm(train_loader)):
             # Move to device
-            images = images.to(device)
-            widths = widths.to(device)
+            images = images.to(device, non_blocking=True)
+            widths = widths.to(device, non_blocking=True)
             targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
             
             # Zero gradients
@@ -374,8 +374,8 @@ def main():
         
         with torch.no_grad():
             for images, solution_strings, widths in tqdm(val_loader):
-                images = images.to(device)
-                widths = widths.to(device)
+                images = images.to(device, non_blocking=True)
+                widths = widths.to(device, non_blocking=True)
                 targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
                 
                 # Forward pass
