@@ -64,9 +64,16 @@ class WhipstrConfig(PretrainedConfig):
 
 
 class WhipstrTokenizer(PreTrainedTokenizer):
-    """Character-level tokenizer using your model.json vocabulary."""
+    """Character-level tokenizer using your model.json vocabulary.
+    
+    Token ID scheme:
+        0 = PAD / BOS / UNK  (shared)
+        1..N = real characters
+        N+1 = EOS
+    """
     
     pad_token = "<pad>"
+    eos_token = "<eos>"
     
     def __init__(self, vocab_file, **kwargs):
         with open(vocab_file) as f:
@@ -76,8 +83,10 @@ class WhipstrTokenizer(PreTrainedTokenizer):
         self.idx_to_char = {i + 1: c for i, c in enumerate(vocab_list)}
         self.char_to_idx[self.pad_token] = 0
         self.idx_to_char[0] = self.pad_token
+        self.char_to_idx[self.eos_token] = len(vocab_list) + 1
+        self.idx_to_char[len(vocab_list) + 1] = self.eos_token
         
-        super().__init__(pad_token=self.pad_token, **kwargs)
+        super().__init__(pad_token=self.pad_token, eos_token=self.eos_token, **kwargs)
     
     @property
     def vocab_size(self):
@@ -99,8 +108,9 @@ class WhipstrTokenizer(PreTrainedTokenizer):
         path = os.path.join(save_directory, "model.json")
         with open(path, "w") as f:
             vocab_list = list(self.char_to_idx.keys())
-            if self.pad_token in vocab_list:
-                vocab_list.remove(self.pad_token)
+            for special in [self.pad_token, self.eos_token]:
+                if special in vocab_list:
+                    vocab_list.remove(special)
             json.dump({"Vocab": vocab_list}, f, indent=2)
         return (path,)
 
@@ -354,12 +364,12 @@ class WhipstrForConditionalGeneration(PreTrainedModel):
         outputs = self.transformer(encoder_tokens, labels) if labels is not None else encoder_tokens
         return {"logits": outputs}
     
-    def generate(self, input_features, max_length=500, start_token=None, **kwargs):
-        if start_token is None:
-            start_token = self.config.vocab_size - 1
+    def generate(self, input_features, max_length=500, start_token=0, eos_token=None, **kwargs):
+        if eos_token is None:
+            eos_token = self.config.vocab_size - 1
         
         encoder_tokens = self.encoder(input_features)
-        return self.transformer.generate(encoder_tokens, max_length=max_length, start_token=start_token)
+        return self.transformer.generate(encoder_tokens, max_length=max_length, start_token=start_token, eos_token=eos_token)
 
 
 def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None, variant=None):

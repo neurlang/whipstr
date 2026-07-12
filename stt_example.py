@@ -30,7 +30,7 @@ def save_vocab(vocab_list, path):
         json.dump({"Vocab": vocab_list}, f, indent=2)
 
 
-def save_checkpoint(encoder, transformer, optimizer, epoch, val_accuracy, save_dir, vocab_list):
+def save_checkpoint(encoder, transformer, optimizer, epoch, val_accuracy, save_dir, vocab_list, char_to_idx, idx_to_char, pad_id, eos_id, transformer_vocab_size):
     """Save model checkpoint and vocab to the given directory."""
     os.makedirs(save_dir, exist_ok=True)
     torch.save({
@@ -39,18 +39,30 @@ def save_checkpoint(encoder, transformer, optimizer, epoch, val_accuracy, save_d
         'transformer_state_dict': transformer.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'val_accuracy': val_accuracy,
+        'char_to_idx': char_to_idx,
+        'idx_to_char': idx_to_char,
+        'pad_id': pad_id,
+        'eos_id': eos_id,
+        'vocab_size': transformer_vocab_size,
     }, os.path.join(save_dir, 'checkpoint.pt'))
     save_vocab(vocab_list, os.path.join(save_dir, 'model.json'))
 
 
-def solution_string_to_tensor(solution_strings, char_to_idx, device):
-    """Convert transcription strings to tensor of character indices."""
-    char_lists = [[char_to_idx.get(c, 0) for c in s] for s in solution_strings]
-    max_len = max(len(c) for c in char_lists)
+def solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device):
+    """Convert transcription strings to tensor of character indices.
+    
+    Builds sequence as: [BOS, chars..., EOS] then pads with PAD to uniform length.
+    """
+    bos_id = pad_id
+    unk_id = pad_id
+    char_lists = [[char_to_idx.get(c, unk_id) for c in s] for s in solution_strings]
+    max_text_len = max(len(c) for c in char_lists)
+    total_len = max_text_len + 2  # BOS + chars + EOS
     padded = []
     for chars in char_lists:
-        padded_seq = chars + [0] * (max_len - len(chars) + 1)
-        padded.append(padded_seq)
+        seq = [bos_id] + chars + [eos_id]
+        seq += [pad_id] * (total_len - len(seq))
+        padded.append(seq)
     return torch.tensor(padded, dtype=torch.long, device=device)
 
 
@@ -115,7 +127,7 @@ def main():
     print(f"   Configuration:")
     print(f"   - limit: {1000}")
     
-    # Build character vocabulary
+    # Build character vocabulary from full dataset, then restrict to training split
     all_chars = set()
 
     dataset = WhipstrTSVSpeechDataset(
@@ -126,18 +138,33 @@ def main():
     
     print(f"   Dataset size: {len(dataset)}")
     
-    # Create char to index mapping (0 is reserved for padding)
-    char_to_idx = {char: idx + 1 for idx, char in enumerate(sorted(all_chars))}
-    idx_to_char = {idx: char for char, idx in char_to_idx.items()}
-    idx_to_char[0] = '<PAD>'
-    vocab_size = len(char_to_idx) + 1  # +1 for padding
-    start_token_idx = vocab_size  # Use vocab_size as start token
+    # Split dataset into train and validation (80/20 split)
+    train_size = int(0.99 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     
-    print(f"   Vocabulary size: {vocab_size}")
-    print(f"   Characters: {sorted(all_chars)}")
+    # Build vocabulary from training split only
+    train_chars = set()
+    for idx in train_dataset.indices:
+        _, text = dataset[idx]
+        train_chars.update(text)
+    
+    # Token ID assignment:
+    #   0 = PAD / BOS / UNK  (shared)
+    #   1..N = real characters
+    #   N+1 = EOS
+    char_to_idx = {char: i + 1 for i, char in enumerate(sorted(train_chars))}
+    idx_to_char = {i: char for char, i in char_to_idx.items()}
+    pad_id = 0
+    eos_id = len(char_to_idx) + 1
+    transformer_vocab_size = eos_id + 1  # 0 + N chars + 1 for EOS
+    
+    print(f"   Training vocabulary size: {len(train_chars)}")
+    print(f"   Transformer vocab size (incl. PAD/BOS/UNK + EOS): {transformer_vocab_size}")
+    print(f"   Characters: {sorted(train_chars)}")
     
     # Save vocabulary to models/model.json
-    vocab_list = sorted(all_chars)
+    vocab_list = sorted(train_chars)
     os.makedirs('models', exist_ok=True)
     save_vocab(vocab_list, 'models/model.json')
     print(f"   Vocabulary saved to models/model.json")
@@ -151,11 +178,6 @@ def main():
     
     # Step 2: Create dataloaders
     print(f"\n3. Creating DataLoaders")
-    
-    # Split dataset into train and validation (80/20 split)
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=32)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn, num_workers=32)
@@ -185,7 +207,7 @@ def main():
         num_decoder_layers=variant_cfg["num_decoder_layers"],
         dim_feedforward=variant_cfg["dim_feedforward"],
         dropout=variant_cfg["dropout"],
-        vocab_size=vocab_size + 1,  # +1 for start token
+        vocab_size=transformer_vocab_size,
         input_values=variant_cfg["encoder_embed_dim"],
     ).to(device)
     print(f"   Transformer:")
@@ -194,7 +216,7 @@ def main():
     print(f"   - Encoder layers: {variant_cfg['num_encoder_layers']}")
     print(f"   - Decoder layers: {variant_cfg['num_decoder_layers']}")
     print(f"   - Feedforward dim: {variant_cfg['dim_feedforward']}")
-    print(f"   - Vocabulary size: {vocab_size + 1}")
+    print(f"   - Vocabulary size: {transformer_vocab_size}")
     
     # Count parameters
     encoder_params = sum(p.numel() for p in encoder.parameters())
@@ -226,10 +248,10 @@ def main():
         list(encoder.parameters()) + list(transformer.parameters()),
         lr=learning_rate
     )
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
     print(f"   Optimizer: Adam")
     print(f"   Learning rate: {learning_rate}")
-    print(f"   Loss function: CrossEntropyLoss")
+    print(f"   Loss function: CrossEntropyLoss (ignore_index={pad_id})")
     
     # Load checkpoint if --continue-pt was provided
     start_epoch = 0
@@ -254,20 +276,26 @@ def main():
             for images, solution_strings, widths in tqdm(val_loader, desc="   Baseline eval"):
                 images = images.to(device)
                 widths = widths.to(device)
-                targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
-                batch_size_actual, seq_len = targets.shape
+                targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
                 encoder_tokens = encoder(images)
                 # Build encoder padding mask: True at positions beyond the sample's real windows
                 T = encoder_tokens.shape[1]
                 real_windows = widths - window_size + 1
                 encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
-                start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
-                decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-                logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
+                decoder_input = targets[:, :-1]
+                labels = targets[:, 1:]
+                causal_mask = transformer._generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                target_padding_mask = decoder_input.eq(pad_id)
+                logits = transformer(
+                    encoder_tokens, decoder_input,
+                    target_mask=causal_mask,
+                    encoder_padding_mask=encoder_padding_mask,
+                    target_padding_mask=target_padding_mask,
+                )
                 predictions = torch.argmax(logits, dim=-1)
-                mask = targets != 0
-                total_correct += ((predictions == targets) & mask).sum().item()
-                total_chars += mask.sum().item()
+                valid_mask = labels.ne(pad_id)
+                total_correct += ((predictions == labels) & valid_mask).sum().item()
+                total_chars += valid_mask.sum().item()
         best_val_accuracy = total_correct / max(total_chars, 1)
         print(f"   Baseline val_accuracy: {best_val_accuracy:.4f}")
 
@@ -291,8 +319,7 @@ def main():
             # Move to device
             images = images.to(device)
             widths = widths.to(device)
-            targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
-            batch_size_actual, seq_len = targets.shape
+            targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
             
             # Zero gradients
             optimizer.zero_grad()
@@ -304,17 +331,22 @@ def main():
             real_windows = widths - window_size + 1
             encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
             
-            # Prepare decoder input (shift targets, prepend start token)
-            start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
-            decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
+            # Prepare decoder input and labels
+            decoder_input = targets[:, :-1]
+            labels = targets[:, 1:]
+            causal_mask = transformer._generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+            target_padding_mask = decoder_input.eq(pad_id)
             
             # Transformer forward
-            logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
+            logits = transformer(
+                encoder_tokens, decoder_input,
+                target_mask=causal_mask,
+                encoder_padding_mask=encoder_padding_mask,
+                target_padding_mask=target_padding_mask,
+            )
             
-            # Compute loss
-            logits_flat = logits.reshape(-1, vocab_size + 1)
-            targets_flat = targets.reshape(-1)
-            loss = criterion(logits_flat, targets_flat)
+            # Compute loss (ignore PAD positions)
+            loss = criterion(logits.transpose(1, 2), labels)
             
             # Backward pass
             loss.backward()
@@ -329,7 +361,7 @@ def main():
             if global_batch_idx % 1000 == 0:
                 ckpt_dir = f'models/checkpoint_batch_{global_batch_idx}'
                 save_checkpoint(encoder, transformer, optimizer, epoch + 1,
-                                0.0, ckpt_dir, vocab_list)
+                                0.0, ckpt_dir, vocab_list, char_to_idx, idx_to_char, pad_id, eos_id, transformer_vocab_size)
                 print(f"   Batch checkpoint saved at {global_batch_idx} batches")
         
         avg_train_loss = train_loss / num_batches
@@ -347,8 +379,7 @@ def main():
             for images, solution_strings, widths in tqdm(val_loader):
                 images = images.to(device)
                 widths = widths.to(device)
-                targets = solution_string_to_tensor(solution_strings, char_to_idx, device)
-                batch_size_actual, seq_len = targets.shape
+                targets = solution_string_to_tensor(solution_strings, char_to_idx, pad_id, eos_id, device)
                 
                 # Forward pass
                 encoder_tokens = encoder(images)
@@ -356,22 +387,28 @@ def main():
                 T = encoder_tokens.shape[1]
                 real_windows = widths - window_size + 1
                 encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
-                start_tokens = torch.full((batch_size_actual, 1), start_token_idx, dtype=torch.long, device=device)
-                decoder_input = torch.cat([start_tokens, targets[:, :-1]], dim=1)
-                logits = transformer(encoder_tokens, decoder_input, encoder_padding_mask=encoder_padding_mask)
+                decoder_input = targets[:, :-1]
+                labels = targets[:, 1:]
+                causal_mask = transformer._generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                target_padding_mask = decoder_input.eq(pad_id)
+                logits = transformer(
+                    encoder_tokens, decoder_input,
+                    target_mask=causal_mask,
+                    encoder_padding_mask=encoder_padding_mask,
+                    target_padding_mask=target_padding_mask,
+                )
                 
-                # Loss
-                logits_flat = logits.reshape(-1, vocab_size + 1)
-                targets_flat = targets.reshape(-1)
-                loss = criterion(logits_flat, targets_flat)
+                # Loss (ignore PAD positions)
+                loss = criterion(logits.transpose(1, 2), labels)
                 val_loss += loss.item()
                 num_val_batches += 1
                 
-                # Accuracy
+                # Accuracy over non-padded positions only
                 predictions = torch.argmax(logits, dim=-1)
-                correct = (predictions == targets).sum().item()
+                valid_mask = labels.ne(pad_id)
+                correct = ((predictions == labels) & valid_mask).sum().item()
                 total_correct += correct
-                total_chars += targets.numel()
+                total_chars += valid_mask.sum().item()
         
         avg_val_loss = val_loss / max(num_val_batches, 1)
         val_accuracy = total_correct / max(total_chars, 1)
@@ -386,13 +423,13 @@ def main():
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
             save_checkpoint(encoder, transformer, optimizer, epoch + 1,
-                            val_accuracy, 'models/best', vocab_list)
+                            val_accuracy, 'models/best', vocab_list, char_to_idx, idx_to_char, pad_id, eos_id, transformer_vocab_size)
             print(f"   ✓ New best model saved (val_acc={val_accuracy:.4f})")
         
         # Most recent epoch checkpoint (keep only 2)
         epoch_dir = f'models/epoch_{epoch + 1}'
         save_checkpoint(encoder, transformer, optimizer, epoch + 1,
-                        val_accuracy, epoch_dir, vocab_list)
+                        val_accuracy, epoch_dir, vocab_list, char_to_idx, idx_to_char, pad_id, eos_id, transformer_vocab_size)
         recent_epoch_dirs.append(epoch_dir)
         if len(recent_epoch_dirs) > 2:
             old_dir = recent_epoch_dirs.pop(0)
@@ -428,12 +465,15 @@ def main():
         predictions = transformer.generate(
             encoder_tokens,
             max_length=max_length,
-            start_token=start_token_idx
+            start_token=pad_id,
+            eos_token=eos_id,
         )
         
-        # Convert to string
+        # Convert to string, stopping at first EOS token
         predicted_indices = predictions[0].cpu().tolist()
-        predicted_string = ''.join(idx_to_char.get(idx, '?') for idx in predicted_indices if idx > 0 and idx < vocab_size)
+        if eos_id in predicted_indices:
+            predicted_indices = predicted_indices[:predicted_indices.index(eos_id)]
+        predicted_string = ''.join(idx_to_char.get(idx, '?') for idx in predicted_indices if idx > 0 and idx < eos_id)
         
         print(f"   Predicted:    '{predicted_string}'")
         

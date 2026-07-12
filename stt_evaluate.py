@@ -65,14 +65,14 @@ def main():
         vocab_list = sorted(all_chars)
         print(f"Vocabulary built from dataset ({len(vocab_list)} chars)")
 
-    char_to_idx = {char: idx + 1 for idx, char in enumerate(vocab_list)}
-    idx_to_char = {idx: char for char, idx in char_to_idx.items()}
-    idx_to_char[0] = '<PAD>'
-    vocab_size = len(char_to_idx) + 1  # +1 for padding
-    start_token_idx = vocab_size
+    char_to_idx = {char: i + 1 for i, char in enumerate(vocab_list)}
+    idx_to_char = {i: char for char, i in char_to_idx.items()}
+    pad_id = 0
+    eos_id = len(char_to_idx) + 1
+    transformer_vocab_size = eos_id + 1  # 0 + N chars + 1 for EOS
 
     # Instantiate models from variant config
-    cfg = get_variant_config(args.variant, vocab_size=vocab_size + 1)
+    cfg = get_variant_config(args.variant, vocab_size=transformer_vocab_size)
     encoder = WhipstrEncoder(
         stride=cfg["stride"], window_size=cfg["window_size"],
         output_values=cfg["encoder_embed_dim"],
@@ -96,7 +96,9 @@ def main():
     encoder.load_state_dict(checkpoint['encoder_state_dict'])
     transformer.load_state_dict(checkpoint['transformer_state_dict'])
     epoch = checkpoint.get('epoch', '?')
-    print(f"Checkpoint epoch: {epoch}")
+    # Use checkpoint's eos_id if available, fall back to computed
+    eos_id = checkpoint.get('eos_id', eos_id)
+    print(f"Checkpoint epoch: {epoch}, eos_id: {eos_id}")
 
     encoder.eval()
     transformer.eval()
@@ -118,7 +120,8 @@ def main():
             predictions = transformer.generate(
                 encoder_tokens.to(device),
                 max_length = len(ground_truth) + 1,
-                start_token=vocab_size
+                start_token=pad_id,
+                eos_token=eos_id,
             )
 
             del encoder_tokens
@@ -127,10 +130,14 @@ def main():
 
             del predictions
 
+            # Stop at first EOS token
+            if eos_id in predicted_indices:
+                predicted_indices = predicted_indices[:predicted_indices.index(eos_id)]
+
             predicted_text = ''.join(
                 idx_to_char.get(idx, '?')
                 for idx in predicted_indices
-                if 0 < idx < vocab_size
+                if 0 < idx < eos_id
             )
 
             all_references.append(ground_truth)

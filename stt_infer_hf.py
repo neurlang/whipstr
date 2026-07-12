@@ -41,7 +41,8 @@ def infer(audio_path, model_path):
     input_features = extracted["input_features"]
     
     with torch.no_grad():
-        start_token_idx = config.vocab_size - 1
+        pad_id = 0
+        eos_id = config.vocab_size - 1
         
         # Estimate max_length based on audio width (rough estimate: 1 char per 10-20 frames)
         # encoder produces ~width/window_size tokens, so max tokens ~ width/window_size
@@ -54,15 +55,20 @@ def infer(audio_path, model_path):
         predictions = model.transformer.generate(
             encoder_tokens,
             max_length=estimated_chars + 100,  # add buffer
-            start_token=start_token_idx
+            start_token=pad_id,
+            eos_token=eos_id,
         )
         
         predicted_indices = predictions[0].cpu().tolist()
         
+        # Stop at first EOS token
+        if eos_id in predicted_indices:
+            predicted_indices = predicted_indices[:predicted_indices.index(eos_id)]
+        
         predicted_text = ''.join(
             tokenizer.idx_to_char.get(idx, '?')
             for idx in predicted_indices
-            if 0 < idx < config.vocab_size
+            if 0 < idx < eos_id
         )
     
     return predicted_text

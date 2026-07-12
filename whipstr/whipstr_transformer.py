@@ -102,7 +102,7 @@ class WhipstrTransformer(nn.Module):
         # Output projection to vocabulary logits
         self.output_projection = nn.Linear(d_model, vocab_size)
     
-    def forward(self, encoder_tokens, target_digits, target_mask=None, encoder_padding_mask=None):
+    def forward(self, encoder_tokens, target_digits, target_mask=None, encoder_padding_mask=None, target_padding_mask=None):
         """Forward pass with teacher forcing.
         
         Args:
@@ -110,6 +110,7 @@ class WhipstrTransformer(nn.Module):
             target_digits: torch.LongTensor [batch, N] previously generated tokens
             target_mask: torch.Tensor [N, N] causal mask for auto-regressive generation
             encoder_padding_mask: optional torch.BoolTensor [batch, T] with True at padding positions
+            target_padding_mask: optional torch.BoolTensor [batch, N] with True at padding positions in target
         
         Returns:
             torch.Tensor [batch, N, vocab_size] logits for each position
@@ -182,7 +183,8 @@ class WhipstrTransformer(nn.Module):
                 decoder_input,
                 encoder_memory,
                 tgt_mask=target_mask,
-                memory_key_padding_mask=encoder_padding_mask
+                memory_key_padding_mask=encoder_padding_mask,
+                tgt_key_padding_mask=target_padding_mask
             )  # [batch, N, d_model]
             
             # Project to vocabulary logits
@@ -200,15 +202,14 @@ class WhipstrTransformer(nn.Module):
             else:
                 raise RuntimeError(f"Error during transformer forward pass: {str(e)}") from e
     
-    def generate(self, encoder_tokens, max_length, start_token, eos_token=None):
+    def generate(self, encoder_tokens, max_length, start_token=0, eos_token=None):
         """Auto-regressive generation for inference.
         
         Args:
             encoder_tokens: torch.Tensor [batch, T, self.input_values] from CNN encoder
             max_length: Maximum number of tokens to generate
-            start_token: Special token to begin generation
+            start_token: Special token to begin generation (default: 0 = BOS/PAD)
             eos_token: Token that signals end-of-sequence (stops generation early).
-                        Defaults to start_token if not provided.
         
         Returns:
             torch.LongTensor [batch, N] predicted tokens, where N <= max_length
@@ -221,9 +222,6 @@ class WhipstrTransformer(nn.Module):
             raise ValueError(f"encoder_tokens must be 3D [batch, T, self.input_values], got shape {encoder_tokens.shape}")
         if encoder_tokens.size(2) != self.input_values:
             raise ValueError(f"encoder_tokens must have self.input_values features, got {encoder_tokens.size(2)}")
-        
-        if eos_token is None:
-            eos_token = start_token
         
         # Encode once
         encoder_out = self.encoder_projection(encoder_tokens)
@@ -260,7 +258,7 @@ class WhipstrTransformer(nn.Module):
             generated = torch.cat([generated, next_token], dim=1)
             
             # Stop early if all items in batch predict the EOS token
-            if (next_token == eos_token or next_token == 0).all():
+            if eos_token is not None and (next_token == eos_token).all():
                 break
         
         # Remove start token and return only generated output
