@@ -13,7 +13,7 @@ class WhipstrTSVSpeechDataset(Dataset):
     converts audio to phase spectrograms, and formats them for Whipstr training.
     """
     
-    def __init__(self, tsv_path, limit=0, all_chars=None):
+    def __init__(self, tsv_path, limit=-1, all_chars=None):
         """
         Initialize the Whipstr TSV Speech dataset.
         
@@ -26,8 +26,8 @@ class WhipstrTSVSpeechDataset(Dataset):
         
         if not isinstance(limit, (int, float)):
             raise TypeError(f"limit must be a number, got {type(limit).__name__}")
-        if limit < 0:
-            raise ValueError(f"limit must be >= 0, got {limit}")
+        if limit < -1:
+            raise ValueError(f"limit must be >= -1, got {limit}")
         
         self.tsv_path = tsv_path
         self.limit = limit
@@ -68,10 +68,10 @@ class WhipstrTSVSpeechDataset(Dataset):
                 if all_chars is not None:
                     all_chars.update(transcription)
                 
-                self.limit -= 1
-                if self.limit >= 0:
+                if self.limit != 0:
+                    self.limit -= 1        
                     self.samples.append((flac_path, transcription))
-        
+
         if len(self.samples) == 0:
             raise ValueError(f"No valid samples found in TSV file: {tsv_path}")
 
@@ -84,8 +84,8 @@ class WhipstrTSVSpeechDataset(Dataset):
         for fname in os.listdir(directory):
             if fname.endswith(suffix):
                 full_path = os.path.join(directory, fname)
-                self.limit -= 1
-                if self.limit >= 0:
+                if self.limit != 0:
+                    self.limit -= 1
                     self.samples.append((full_path, ''))
                 else:
                     return
