@@ -26,8 +26,8 @@ def test_encoder_compatibility():
         test_image = torch.rand(1, 2, 836, width)
         output = encoder(test_image)
 
-        assert output.shape == (1, expected_frames, 10), \
-            f"Expected shape (1, {expected_frames}, 10), got {output.shape}"
+        assert output.shape == (1, expected_frames, 64), \
+            f"Expected shape (1, {expected_frames}, 64), got {output.shape}"
 
         # Check output is finite
         assert torch.all(torch.isfinite(output)), "Output contains NaN or Inf"
@@ -67,7 +67,7 @@ def test_encoder_architecture():
     assert encoder.conv1.in_channels == 2, "Conv1 should have 2 input channels"
     assert encoder.conv1.out_channels == 32, "Conv1 should have 32 output channels"
     assert encoder.conv4.out_channels == 256, "Conv4 should have 256 output channels"
-    assert encoder.fc2.out_features == 10, "FC2 should output 10 classes"
+    assert encoder.fc2.out_features == 64, "FC2 should output 64 classes"
 
     print(f"✓ Layer dimensions correct")
     print()
@@ -101,7 +101,7 @@ def test_window_extraction():
 
     # Process through encoder
     output = encoder(test_image)
-    assert output.shape == (1, num_windows, 10), f"Expected shape (1, {num_windows}, 10), got {output.shape}"
+    assert output.shape == (1, num_windows, 64), f"Expected shape (1, {num_windows}, 64), got {output.shape}"
 
     print(f"✓ Windows extracted correctly with shape [2, 836, 28]")
     print(f"✓ Encoder output shape: {output.shape}")

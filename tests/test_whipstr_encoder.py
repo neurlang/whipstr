@@ -36,9 +36,9 @@ def test_property_7_variable_width_handling(width, stride):
         assert output.shape[0] == batch_size, \
             f"Expected batch size {batch_size}, got {output.shape[0]}"
         
-        # Output should have 10 values per token
-        assert output.shape[2] == 10, \
-            f"Expected 10 values per token, got {output.shape[2]}"
+        # Output should have 64 values per token
+        assert output.shape[2] == 64, \
+            f"Expected 64 values per token, got {output.shape[2]}"
         
     except Exception as e:
         pytest.fail(f"Encoder failed to process width {width}: {e}")
@@ -87,7 +87,7 @@ def test_property_9_valid_token_values(width, stride):
     """
     Property 9: Valid token values
     For any frame processed by the CNN encoder, the output token should 
-    contain exactly 10 float values (raw logits, no range restriction).
+    contain exactly 64 float values (raw logits, no range restriction).
     """
     batch_size = 1
     encoder = WhipstrEncoder(stride=stride)
@@ -98,9 +98,9 @@ def test_property_9_valid_token_values(width, stride):
     # Process through encoder
     output = encoder(image)
     
-    # Check that each token has exactly 10 values
-    assert output.shape[2] == 10, \
-        f"Expected 10 values per token, got {output.shape[2]}"
+    # Check that each token has exactly 64 values
+    assert output.shape[2] == 64, \
+        f"Expected 64 values per token, got {output.shape[2]}"
     
     # Check that values are finite (no NaN or Inf)
     assert torch.all(torch.isfinite(output)), \
@@ -124,7 +124,7 @@ def test_minimum_width_single_frame():
     # Should produce exactly 1 frame
     assert output.shape[0] == 2  # batch size
     assert output.shape[1] == 1  # single frame
-    assert output.shape[2] == 10  # 10 values per token
+    assert output.shape[2] == 64  # 64 values per token
     
     # Values should be finite (raw logits)
     assert torch.all(torch.isfinite(output))
@@ -176,9 +176,9 @@ def test_output_shape_matches_expectations():
         image = torch.rand(1, 2, 836, width)
         output = encoder(image)
         
-        assert output.shape == (1, expected_frames, 10), \
+        assert output.shape == (1, expected_frames, 64), \
             f"For width={width}, stride={stride}: " \
-            f"expected shape (1, {expected_frames}, 10), got {output.shape}"
+            f"expected shape (1, {expected_frames}, 64), got {output.shape}"
 
 
 def test_invalid_input_channels():

@@ -25,7 +25,7 @@ def test_property_10_token_input_validation(batch_size, seq_len, target_len):
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
 
     # Create valid encoder tokens (raw logits can be any finite value)
-    encoder_tokens = torch.randn(batch_size, seq_len, 10)
+    encoder_tokens = torch.randn(batch_size, seq_len, 64)
 
     # Create valid target sequence
     target_digits = torch.randint(0, DEFAULT_VOCAB_SIZE, (batch_size, target_len))
@@ -47,8 +47,8 @@ def test_property_10_token_input_validation(batch_size, seq_len, target_len):
         pytest.fail(f"Transformer failed with valid inputs: {e}")
 
     # Test that wrong number of features raises ValueError
-    invalid_tokens_wrong_size = torch.rand(batch_size, seq_len, 5)  # 5 instead of 10
-    with pytest.raises(ValueError, match="encoder_tokens must have 10 features"):
+    invalid_tokens_wrong_size = torch.rand(batch_size, seq_len, 5)  # 5 instead of 64
+    with pytest.raises(ValueError, match="encoder_tokens must have self.input_values features"):
         transformer(invalid_tokens_wrong_size, target_digits)
 
 
@@ -70,7 +70,7 @@ def test_property_11_autoregressive_interface(batch_size, seq_len, max_length):
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
     transformer.eval()
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
 
     with torch.no_grad():
         generated = transformer.generate(encoder_tokens, max_length=max_length)
@@ -104,7 +104,7 @@ def test_property_12_output_format(batch_size, seq_len, target_len):
     """
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
     target_digits = torch.randint(0, DEFAULT_VOCAB_SIZE, (batch_size, target_len))
 
     output = transformer(encoder_tokens, target_digits)
@@ -134,7 +134,7 @@ def test_property_13_prediction_range(batch_size, seq_len, target_len):
     """
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
     target_digits = torch.randint(0, DEFAULT_VOCAB_SIZE, (batch_size, target_len))
 
     output = transformer(encoder_tokens, target_digits)
@@ -159,7 +159,7 @@ def test_short_sequence_n3():
     seq_len = 10
     target_len = 3
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
     target_digits = torch.randint(0, DEFAULT_VOCAB_SIZE, (batch_size, target_len))
 
     output = transformer(encoder_tokens, target_digits)
@@ -179,7 +179,7 @@ def test_longer_sequence_n15():
     seq_len = 50
     target_len = 15
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
     target_digits = torch.randint(0, DEFAULT_VOCAB_SIZE, (batch_size, target_len))
 
     output = transformer(encoder_tokens, target_digits)
@@ -200,7 +200,7 @@ def test_generate_produces_valid_digits():
     seq_len = 30
     max_length = 10
 
-    encoder_tokens = torch.rand(batch_size, seq_len, 10)
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
 
     with torch.no_grad():
         generated = transformer.generate(encoder_tokens, max_length=max_length)
@@ -218,7 +218,7 @@ def test_invalid_target_digits():
     """Test that invalid target digits raise ValueError."""
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
 
-    encoder_tokens = torch.rand(2, 10, 10)
+    encoder_tokens = torch.rand(2, 10, 64)
 
     # Target values >= vocab_size
     invalid_targets = torch.randint(11, 20, (2, 5))
@@ -242,7 +242,7 @@ def test_invalid_target_digits_shape():
     """Test that invalid target digits shape raises ValueError."""
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
 
-    encoder_tokens = torch.rand(2, 10, 10)
+    encoder_tokens = torch.rand(2, 10, 64)
 
     invalid_targets = torch.randint(0, DEFAULT_VOCAB_SIZE, (5,))
 
@@ -255,7 +255,7 @@ def test_generate_with_different_start_token():
     transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
     transformer.eval()
 
-    encoder_tokens = torch.rand(2, 20, 10)
+    encoder_tokens = torch.rand(2, 20, 64)
 
     with torch.no_grad():
         generated1 = transformer.generate(encoder_tokens, max_length=5, start_token=10)

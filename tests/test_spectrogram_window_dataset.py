@@ -52,7 +52,7 @@ def test_property_9_dataset_window_shape(W):
     """
     Property 9: Dataset window shape
     For any spectrogram of shape (2, 836, W) where W >= 11, the
-    SpectrogramWindowDataset SHALL yield windows of shape (2, 11, 836)
+    SpectrogramWindowDataset SHALL yield windows of shape (2, 836, 11)
     and conditioning tokens of shape (64,).
     """
     spec = _make_spec(W)
@@ -61,8 +61,8 @@ def test_property_9_dataset_window_shape(W):
 
         for i in range(len(ds)):
             window, token = ds[i]
-            assert window.shape == (2, 11, 836), (
-                f"Expected window shape (2, 11, 836), got {tuple(window.shape)}"
+            assert window.shape == (2, 836, 11), (
+                f"Expected window shape (2, 836, 11), got {tuple(window.shape)}"
             )
             assert token.shape == (64,), (
                 f"Expected token shape (64,), got {tuple(token.shape)}"
@@ -110,8 +110,8 @@ def test_property_token_matches_encoder():
 
         for i in range(len(ds)):
             window, token = ds[i]
-            # window is (2, 11, 836); permute to (2, 836, 11) for encoder
-            window_enc = window.permute(0, 2, 1).unsqueeze(0)  # (1, 2, 836, 11)
+            # window is (2, 836, 11); unsqueeze for encoder
+            window_enc = window.unsqueeze(0)  # (1, 2, 836, 11)
             with torch.no_grad():
                 expected_token = ds.encoder(window_enc)  # (1, 1, 64)
             expected_token = expected_token.squeeze(0).squeeze(0)  # (64,)
