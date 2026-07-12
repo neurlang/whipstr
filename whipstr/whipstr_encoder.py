@@ -118,8 +118,9 @@ class WhipstrEncoder(nn.Module):
 
                 end = min(start + chunk, num_windows)
 
-                w = windows[:, start:end]                       # view
-                w = w.contiguous().view(-1, 2, 836, self.window_size)
+                w = windows[:, start:end]                       # [B, local_t, 2, 836, ws]
+                B_local, local_t = w.shape[0], w.shape[1]
+                w = w.contiguous().view(B_local * local_t, 2, 836, self.window_size)
 
                 x = self.relu(self.conv1(w))
                 x = self.relu(self.conv2(x))
@@ -137,10 +138,9 @@ class WhipstrEncoder(nn.Module):
                 x = self.dropout(x)
                 x = self.fc2(x)
 
-                outputs.append(x)
+                outputs.append(x.view(B_local, local_t, self.output_values))
 
-            x = torch.cat(outputs, dim=0)
-            x = x.view(batch_size, num_windows, self.output_values)
+            x = torch.cat(outputs, dim=1)
 
             return x
             

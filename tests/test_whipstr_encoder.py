@@ -224,3 +224,25 @@ def test_invalid_stride_too_large():
     """Test that stride > 28 raises ValueError."""
     with pytest.raises(ValueError, match="stride must be <= window_size"):
         WhipstrEncoder(stride=29)
+
+
+def test_batch_greater_than_one_with_multiple_chunks():
+    """
+    Regression test: batch_size > 1 with T > chunk must not scramble windows.
+    
+    The encoder processes windows in chunks; a bug in the reshape/concat logic
+    silently permutes windows between batch elements when B > 1 and T > chunk.
+    This test compares single-chunk (always correct) vs multi-chunk output.
+    """
+    batch_size = 3
+    width = 200                                  # gives T = (200-28)//1+1 = 173 > 16
+    encoder = WhipstrEncoder(stride=1)
+    encoder.eval()
+
+    image = torch.rand(batch_size, 2, 836, width)
+
+    with torch.no_grad():
+        y_one_chunk = encoder(image, chunk=10_000)   # single chunk
+        y_many_chunks = encoder(image, chunk=16)     # multiple chunks
+
+    torch.testing.assert_close(y_one_chunk, y_many_chunks)
