@@ -143,11 +143,8 @@ def main():
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     
-    # Build vocabulary from training split only
-    train_chars = set()
-    for idx in train_dataset.indices:
-        _, text = dataset[idx]
-        train_chars.update(text)
+    # Build vocabulary from training split only (fast: no audio loading)
+    train_chars = dataset.chars_for_subset(train_dataset.indices)
     
     # Token ID assignment:
     #   0 = PAD / BOS / UNK  (shared)

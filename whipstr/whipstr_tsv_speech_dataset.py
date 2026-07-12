@@ -91,6 +91,16 @@ class WhipstrTSVSpeechDataset(Dataset):
                     return
     
 
+    def chars_for_subset(self, indices):
+        """Return the set of characters appearing in transcriptions for given indices.
+
+        Operates on stored transcriptions only — no audio loading.
+        """
+        chars = set()
+        for idx in indices:
+            chars.update(self.samples[idx][1])
+        return chars
+
     def __len__(self):
         """Return the number of samples in the dataset."""
         return len(self.samples)
