@@ -24,6 +24,13 @@ wer_transform = tr.Compose([
     tr.Strip(),
     tr.ReduceToListOfListOfWords(),
 ])
+cer_transform = tr.Compose([
+    tr.ToLowerCase(),
+    tr.RemovePunctuation(),
+    tr.RemoveMultipleSpaces(),
+    tr.Strip(),
+    tr.ReduceToListOfListOfChars(),
+])
 
 
 def main():
@@ -119,7 +126,7 @@ def main():
 
             predictions = transformer.generate(
                 encoder_tokens.to(device),
-                max_length = len(ground_truth) + 1,
+                max_length = 2*len(ground_truth) + 1,
                 start_token=pad_id,
                 eos_token=eos_id,
             )
@@ -148,7 +155,12 @@ def main():
                 reference_transform=wer_transform,
                 hypothesis_transform=wer_transform,
             )
-            print(f"[{i+1}/{len(dataset)}]  WER={sample_wer * 100:5.1f}%")
+            sample_cer = jiwer.cer(
+                ground_truth, predicted_text,
+                reference_transform=cer_transform,
+                hypothesis_transform=cer_transform,
+            )
+            print(f"[{i+1}/{len(dataset)}]  WER={sample_wer * 100:5.1f}% CER={sample_cer * 100:5.1f}%")
             print(f"  REF: {ground_truth}")
             print(f"  HYP: {predicted_text}")
 
@@ -157,8 +169,14 @@ def main():
         reference_transform=wer_transform,
         hypothesis_transform=wer_transform,
     )
+    overall_cer = jiwer.cer(
+        all_references, all_hypotheses,
+        reference_transform=cer_transform,
+        hypothesis_transform=cer_transform,
+    )
     print(f"{'─' * 60}")
     print(f"\nOverall WER: {overall_wer * 100:.2f}%")
+    print(f"Overall CER: {overall_cer * 100:.2f}%")
 
 
 if __name__ == '__main__':
