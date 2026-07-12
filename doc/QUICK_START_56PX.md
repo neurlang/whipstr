@@ -8,27 +8,13 @@ Spectrograms are now 56 pixels tall (was 28), with audio features randomly posit
 
 ```bash
 # Run verification script
-python test_stretch.py
+python tests/test_stretch.py
 
 # Run all tests
 pytest tests/ -v
 ```
 
 ## Usage Examples
-
-### Generate Dataset Sample
-```python
-from torchvision import datasets, transforms
-from whipstr.whipstr_mnist_dataset import WhipstrMNISTDataset
-
-transform = transforms.Compose([transforms.ToTensor()])
-mnist = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-dataset = WhipstrMNISTDataset(mnist, num_digits=5, max_spacing=5, noise_std=0.1, num_samples=100)
-
-spectrogram, transcription = dataset[0]
-print(f"Shape: {spectrogram.shape}")  # [2, 56, W]
-print(f"Transcription: {transcription}")
-```
 
 ### Process with Encoder
 ```python
@@ -38,22 +24,18 @@ from whipstr.whipstr_encoder import WhipstrEncoder
 encoder = WhipstrEncoder(stride=1)
 test_spectrogram = torch.rand(4, 2, 56, 140)  # Batch of 4
 output = encoder(test_spectrogram)
-print(f"Output: {output.shape}")  # [4, 113, 10]
+print(f"Output: {output.shape}")
 ```
 
 ### Train Model
 ```bash
 # Quick training example
 python example.py
-
-# Full training with improved hyperparameters
-python train_improved.py
 ```
 
 ### Visualize Samples
 ```bash
-python visualize_sample.py
-# Creates: sample_visualization.png, sample_rgb.png
+python visualize_tsv_speech_sample.py
 ```
 
 ## Key Differences from 28px
@@ -109,20 +91,14 @@ pip install matplotlib
 
 ## Documentation
 
-- `IMAGE_STRETCH_CHANGES.md` — Full technical details
+- `doc/IMAGE_STRETCH_CHANGES.md` — Full technical details
 - `doc/IMAGE_STRETCH_SUMMARY.md` — Implementation summary
-- `test_stretch.py` — Verification script
+- `tests/test_stretch.py` — Verification script
 
 ## Next Steps
 
-1. ✅ Verify installation: `python test_stretch.py`
-2. ✅ Run tests: `pytest tests/ -v`
-3. 🚀 Train model: `python train_improved.py`
-4. 📊 Visualize: `python visualize_sample.py`
+1. Verify installation: `python tests/test_stretch.py`
+2. Run tests: `pytest tests/ -v`
+3. 🚀 Train model: `python example.py`
+4. 📊 Visualize: `python visualize_tsv_speech_sample.py`
 5. 🔬 Experiment with hyperparameters
-
----
-
-Status: ✅ Ready for use
-All tests: ✅ Passing (42/42)
-Verification: ✅ Complete
