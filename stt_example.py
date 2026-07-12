@@ -309,7 +309,7 @@ def main():
         encoder.train()
         transformer.train()
         
-        train_loss = 0.0
+        train_loss = torch.zeros((), device=device)
         num_batches = 0
         
         for batch_idx, (images, solution_strings, widths) in enumerate(tqdm(train_loader)):
@@ -351,7 +351,7 @@ def main():
             torch.nn.utils.clip_grad_norm_(transformer.parameters(), 1.0)
             optimizer.step()
             
-            train_loss += loss.item()
+            train_loss += loss.detach()
             num_batches += 1
             global_batch_idx += 1
             
@@ -361,13 +361,13 @@ def main():
                                 0.0, ckpt_dir, vocab_list, char_to_idx, idx_to_char, pad_id, eos_id, transformer_vocab_size)
                 print(f"   Batch checkpoint saved at {global_batch_idx} batches")
         
-        avg_train_loss = train_loss / num_batches
+        avg_train_loss = (train_loss / num_batches).item()
         
         # Validation
         encoder.eval()
         transformer.eval()
         
-        val_loss = 0.0
+        val_loss = torch.zeros((), device=device)
         total_correct = 0
         total_chars = 0
         num_val_batches = 0
@@ -397,7 +397,7 @@ def main():
                 
                 # Loss (ignore PAD positions)
                 loss = criterion(logits.transpose(1, 2), labels)
-                val_loss += loss.item()
+                val_loss += loss
                 num_val_batches += 1
                 
                 # Accuracy over non-padded positions only
@@ -407,7 +407,7 @@ def main():
                 total_correct += correct
                 total_chars += valid_mask.sum().item()
         
-        avg_val_loss = val_loss / max(num_val_batches, 1)
+        avg_val_loss = (val_loss / max(num_val_batches, 1)).item()
         val_accuracy = total_correct / max(total_chars, 1)
         
         print(f"   Epoch {epoch+1}/{num_epochs}: "
