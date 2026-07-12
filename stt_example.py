@@ -13,10 +13,13 @@ import json
 import os
 import shutil
 
+from contextlib import nullcontext
+
 from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from whipstr.whipstr_tsv_speech_dataset import WhipstrTSVSpeechDataset
 from whipstr.whipstr_encoder import WhipstrEncoder
@@ -249,6 +252,12 @@ def main():
     print(f"   Optimizer: Adam")
     print(f"   Learning rate: {learning_rate}")
     print(f"   Loss function: CrossEntropyLoss (ignore_index={pad_id})")
+
+    scaler = GradScaler() if device.type == 'cuda' else None
+    if scaler:
+        print(f"   Mixed precision: Enabled (autocast + GradScaler)")
+    else:
+        print(f"   Mixed precision: Disabled (no CUDA)")
     
     # Load checkpoint if --continue-pt was provided
     start_epoch = 0
@@ -321,35 +330,37 @@ def main():
             # Zero gradients
             optimizer.zero_grad()
             
-            # Forward pass
-            encoder_tokens = encoder(images)
-            # Build encoder padding mask: True at positions beyond the sample's real windows
-            T = encoder_tokens.shape[1]
-            real_windows = widths - window_size + 1
-            encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
-            
-            # Prepare decoder input and labels
-            decoder_input = targets[:, :-1]
-            labels = targets[:, 1:]
-            causal_mask = transformer._generate_square_subsequent_mask(decoder_input.size(1)).to(device)
-            target_padding_mask = decoder_input.eq(pad_id)
-            
-            # Transformer forward
-            logits = transformer(
-                encoder_tokens, decoder_input,
-                target_mask=causal_mask,
-                encoder_padding_mask=encoder_padding_mask,
-                target_padding_mask=target_padding_mask,
-            )
-            
-            # Compute loss (ignore PAD positions)
-            loss = criterion(logits.transpose(1, 2), labels)
-            
-            # Backward pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(transformer.parameters(), 1.0)
-            optimizer.step()
+            # Forward pass with autocast on CUDA
+            with autocast() if scaler is not None else nullcontext():
+                encoder_tokens = encoder(images)
+                T = encoder_tokens.shape[1]
+                real_windows = widths - window_size + 1
+                encoder_padding_mask = torch.arange(T, device=device).unsqueeze(0) >= real_windows.unsqueeze(1)
+                decoder_input = targets[:, :-1]
+                labels = targets[:, 1:]
+                causal_mask = transformer._generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                target_padding_mask = decoder_input.eq(pad_id)
+                logits = transformer(
+                    encoder_tokens, decoder_input,
+                    target_mask=causal_mask,
+                    encoder_padding_mask=encoder_padding_mask,
+                    target_padding_mask=target_padding_mask,
+                )
+                loss = criterion(logits.transpose(1, 2), labels)
+
+            # Backward pass with GradScaler on CUDA
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(transformer.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(transformer.parameters(), 1.0)
+                optimizer.step()
             
             train_loss += loss.detach()
             num_batches += 1
