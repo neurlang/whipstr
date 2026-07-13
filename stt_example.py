@@ -230,6 +230,23 @@ def main():
     if args.finetune_pt:
         print(f"\n6. Loading finetune checkpoint from {args.finetune_pt}")
         finetune_checkpoint = torch.load(args.finetune_pt, map_location=device)
+
+        # Load encoder if present in checkpoint
+        if "encoder_state_dict" in finetune_checkpoint:
+            enc_state = finetune_checkpoint["encoder_state_dict"]
+            enc_model_dict = encoder.state_dict()
+            filtered_enc = {
+                k: v
+                for k, v in enc_state.items()
+                if k in enc_model_dict and enc_model_dict[k].shape == v.shape
+            }
+            enc_missing, enc_unexpected = encoder.load_state_dict(filtered_enc, strict=False)
+            print(f"   Encoder missing: {enc_missing}")
+            print(f"   Encoder unexpected: {enc_unexpected}")
+            print(f"   Loaded {len(filtered_enc)}/{len(enc_state)} encoder parameters")
+        else:
+            print(f"   No encoder_state_dict in checkpoint, skipping encoder load")
+
         state_dict = finetune_checkpoint["transformer_state_dict"]
         model_dict = transformer.state_dict()
         filtered_state = {
