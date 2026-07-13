@@ -359,17 +359,46 @@ class WhipstrForConditionalGeneration(PreTrainedModel):
         
         self.post_init()
     
-    def forward(self, input_features, labels=None):
+    def _convert_attention_mask(self, attention_mask):
+        """Convert HF-style attention_mask to encoder_padding_mask.
+        
+        The attention_mask from the HF pipeline has shape [batch, W] where W is
+        the spectrogram time dimension. Each encoder output token corresponds to
+        a sliding window of window_size frames with stride shift. A token is
+        padding if the entire window is padding (all zeros in attention_mask).
+        
+        Args:
+            attention_mask: optional torch.Tensor [batch, W] with 1 for valid, 0 for padding
+        
+        Returns:
+            optional torch.BoolTensor [batch, T] with True at padding positions
+        """
+        if attention_mask is None:
+            return None
+        W = attention_mask.size(1)
+        unfolded = attention_mask.unfold(1, self.config.window_size, self.config.stride)
+        return (unfolded.sum(dim=-1) == 0)
+    
+    def forward(self, input_features, labels=None, attention_mask=None):
         encoder_tokens = self.encoder(input_features)
-        outputs = self.transformer(encoder_tokens, labels) if labels is not None else encoder_tokens
+        encoder_padding_mask = self._convert_attention_mask(attention_mask)
+        if labels is not None:
+            outputs = self.transformer(encoder_tokens, labels, encoder_padding_mask=encoder_padding_mask)
+        else:
+            outputs = encoder_tokens
         return {"logits": outputs}
     
-    def generate(self, input_features, max_length=500, start_token=0, eos_token=None, **kwargs):
+    def generate(self, input_features, max_length=500, start_token=0, eos_token=None, attention_mask=None, **kwargs):
         if eos_token is None:
             eos_token = self.config.vocab_size - 1
         
         encoder_tokens = self.encoder(input_features)
-        return self.transformer.generate(encoder_tokens, max_length=max_length, start_token=start_token, eos_token=eos_token)
+        encoder_padding_mask = self._convert_attention_mask(attention_mask)
+        return self.transformer.generate(
+            encoder_tokens, max_length=max_length,
+            start_token=start_token, eos_token=eos_token,
+            encoder_padding_mask=encoder_padding_mask
+        )
 
 
 def convert_to_hf(checkpoint_path, model_json_path, output_dir, vocab_size=None, variant=None):

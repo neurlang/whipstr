@@ -202,7 +202,7 @@ class WhipstrTransformer(nn.Module):
             else:
                 raise RuntimeError(f"Error during transformer forward pass: {str(e)}") from e
     
-    def generate(self, encoder_tokens, max_length, start_token=0, eos_token=None):
+    def generate(self, encoder_tokens, max_length, start_token=0, eos_token=None, encoder_padding_mask=None):
         """Auto-regressive generation for inference.
         
         Args:
@@ -210,6 +210,7 @@ class WhipstrTransformer(nn.Module):
             max_length: Maximum number of tokens to generate
             start_token: Special token to begin generation (default: 0 = BOS/PAD)
             eos_token: Token that signals end-of-sequence (stops generation early).
+            encoder_padding_mask: optional torch.BoolTensor [batch, T] with True at padding positions
         
         Returns:
             torch.LongTensor [batch, N] predicted tokens, where N <= max_length
@@ -227,7 +228,10 @@ class WhipstrTransformer(nn.Module):
         # Encode once
         encoder_out = self.encoder_projection(encoder_tokens)
         encoder_out = self.encoder_pos_encoding(encoder_out)
-        encoder_memory = self.transformer_encoder(encoder_out)
+        encoder_memory = self.transformer_encoder(
+            encoder_out,
+            src_key_padding_mask=encoder_padding_mask
+        )
         
         # Initialize with start token
         generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
@@ -247,7 +251,8 @@ class WhipstrTransformer(nn.Module):
             decoder_out = self.transformer_decoder(
                 decoder_input,
                 encoder_memory,
-                tgt_mask=tgt_mask
+                tgt_mask=tgt_mask,
+                memory_key_padding_mask=encoder_padding_mask
             )
             
             # Get logits for last position

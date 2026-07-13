@@ -280,3 +280,87 @@ def test_causal_mask_generation():
             else:
                 assert mask[i, j] == 0.0, \
                     f"Expected 0.0 at position ({i}, {j}), got {mask[i, j]}"
+
+
+def test_generate_with_padding_mask():
+    """Test that generate() accepts and uses encoder_padding_mask."""
+    transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
+    transformer.eval()
+
+    batch_size = 3
+    seq_len = 20
+    max_length = 8
+
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
+    # Mask last 5 positions for all samples
+    encoder_padding_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool)
+    encoder_padding_mask[:, -5:] = True
+
+    with torch.no_grad():
+        generated = transformer.generate(
+            encoder_tokens, max_length=max_length,
+            encoder_padding_mask=encoder_padding_mask
+        )
+
+    assert generated.shape == (batch_size, max_length), \
+        f"Expected shape ({batch_size}, {max_length}), got {generated.shape}"
+    assert torch.all(generated >= 0) and torch.all(generated < DEFAULT_VOCAB_SIZE), \
+        f"Generated invalid values: min={generated.min().item()}, max={generated.max().item()}"
+    assert generated.dtype == torch.long
+
+
+def test_generate_padding_mask_all_valid():
+    """Test that generate() with all-valid mask produces same output as without mask."""
+    transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
+    transformer.eval()
+
+    batch_size = 2
+    seq_len = 15
+    max_length = 6
+
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
+    all_valid_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool)
+
+    with torch.no_grad():
+        out_no_mask = transformer.generate(encoder_tokens, max_length=max_length)
+        out_with_mask = transformer.generate(
+            encoder_tokens, max_length=max_length,
+            encoder_padding_mask=all_valid_mask
+        )
+
+    assert torch.equal(out_no_mask, out_with_mask), \
+        "All-valid mask should produce identical output to no mask"
+
+
+def test_generate_padding_mask_no_crash():
+    """Test that generate() doesn't crash with edge-case masks."""
+    transformer = WhipstrTransformer(d_model=64, nhead=4, num_encoder_layers=2, num_decoder_layers=2)
+    transformer.eval()
+
+    batch_size = 2
+    seq_len = 10
+    max_length = 5
+
+    encoder_tokens = torch.rand(batch_size, seq_len, 64)
+
+    # Mask first half
+    first_half = torch.zeros(batch_size, seq_len, dtype=torch.bool)
+    first_half[:, :seq_len // 2] = True
+    with torch.no_grad():
+        out = transformer.generate(
+            encoder_tokens, max_length=max_length,
+            encoder_padding_mask=first_half
+        )
+    assert out.shape == (batch_size, max_length)
+    assert torch.all(out >= 0) and torch.all(out < DEFAULT_VOCAB_SIZE)
+
+    # Single element mask for each item
+    single_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool)
+    single_mask[:, 0] = True
+    with torch.no_grad():
+        out = transformer.generate(
+            encoder_tokens, max_length=max_length,
+            encoder_padding_mask=single_mask
+        )
+    assert out.shape == (batch_size, max_length)
+    assert torch.all(out >= 0) and torch.all(out < DEFAULT_VOCAB_SIZE)
