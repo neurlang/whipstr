@@ -216,7 +216,8 @@ class WhipstrTransformer(nn.Module):
         """
         batch_size = encoder_tokens.size(0)
         device = encoder_tokens.device
-        
+        pad_id = start_token
+
         # Validate encoder tokens
         if encoder_tokens.dim() != 3:
             raise ValueError(f"encoder_tokens must be 3D [batch, T, self.input_values], got shape {encoder_tokens.shape}")
@@ -230,6 +231,7 @@ class WhipstrTransformer(nn.Module):
         
         # Initialize with start token
         generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
+        finished = torch.zeros(batch_size, 1, dtype=torch.bool, device=device)
         
         # Generate tokens one at a time
         for _ in range(max_length):
@@ -254,12 +256,21 @@ class WhipstrTransformer(nn.Module):
             # Sample next token (greedy)
             next_token = torch.argmax(logits, dim=-1, keepdim=True)  # [batch, 1]
 
+            # Do not generate meaningful tokens after this row has finished
+            next_token = torch.where(
+                finished,
+                torch.full_like(next_token, pad_id),
+                next_token,
+            )
+
             # Append to generated sequence
             generated = torch.cat([generated, next_token], dim=1)
-            
+
             # Stop early if all items in batch predict the EOS token
-            if eos_token is not None and (next_token == eos_token).all():
-                break
+            if eos_token is not None:
+                finished |= next_token.eq(eos_token)
+                if bool(finished.all()):
+                    break
         
         # Remove start token and return only generated output
         return generated[:, 1:]  # [batch, N] where N <= max_length
