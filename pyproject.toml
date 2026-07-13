@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whipstr"
+version = "0.0.1"
+description = "Deep learning ASR using transformer seq2seq with CNN encoder"
+license = {text = "GPL-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "phase-spectrogram>=0.0.11",
+    "jiwer",
+]
+
+[project.optional-dependencies]
+hf = [
+    "transformers",
+    "numpy",
+    "scipy",
+    "soundfile",
+    "sounddevice",
+]
+train = ["tqdm"]
+dev = [
+    "hypothesis>=6.0.0",
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+include = ["whipstr*"]

@@ -1,5 +1,6 @@
 import torch
 import pytest
+from transformers.modeling_outputs import Seq2SeqLMOutput
 from whipstr.hf_integration import WhipstrConfig, WhipstrForConditionalGeneration
 
 
@@ -52,14 +53,6 @@ class TestConvertAttentionMask:
         result = model._convert_attention_mask(attention_mask)
         expected_T = (W - model.config.window_size) // model.config.stride + 1
 
-        # Tokens whose window starts at or beyond valid_frames are padding
-        # Window i covers [i*stride, i*stride + window_size) = [i, i+11)
-        # Token i is padding if start i >= valid_frames (no valid frames left)
-        # Actually, it's padding if all positions in window are 0
-        # Window [valid_frames - window_size + 1, valid_frames) has partial valid frames,
-        # so it depends on whether any valid frame is in the window
-        # The last valid token has window starting at valid_frames - window_size = 19
-        # So tokens 0..19 have at least one valid frame, tokens 20+ are all padding
         assert result.shape == (batch_size, expected_T)
         first_padding = (result[0] == True).nonzero(as_tuple=True)[0]
         if len(first_padding) > 0:
@@ -67,39 +60,70 @@ class TestConvertAttentionMask:
             assert first_pad_idx >= valid_frames - model.config.window_size + 1
 
 
-class TestForwardWithAttentionMask:
-    def test_no_mask(self, model):
+class TestForward:
+    def test_returns_seq2seq_lm_output(self, model):
         B, W = 2, 50
         input_features = make_input_features(B, W)
-        labels = torch.randint(0, 11, (B, 5))
+        with torch.no_grad():
+            out = model.forward(input_features)
+        assert isinstance(out, Seq2SeqLMOutput)
+
+    def test_no_labels_returns_encoder_only(self, model):
+        B, W = 2, 50
+        input_features = make_input_features(B, W)
+        with torch.no_grad():
+            out = model.forward(input_features)
+        assert out.loss is None
+        assert out.logits is None
+        assert out.encoder_last_hidden_state is not None
+
+    def test_with_labels_returns_loss_and_logits(self, model):
+        B, W = 2, 50
+        input_features = make_input_features(B, W)
+        labels = torch.randint(0, 11, (B, 10))
         with torch.no_grad():
             out = model.forward(input_features, labels=labels)
-        assert "logits" in out
+        assert isinstance(out, Seq2SeqLMOutput)
+        assert out.loss is not None
+        assert out.logits is not None
+        assert out.encoder_last_hidden_state is not None
+        assert out.logits.shape == (B, labels.size(1) - 1, 11)
 
-    def test_with_mask(self, model):
+    def test_loss_is_scalar(self, model):
         B, W = 2, 50
         input_features = make_input_features(B, W)
-        labels = torch.randint(0, 11, (B, 5))
+        labels = torch.randint(0, 11, (B, 10))
+        with torch.no_grad():
+            out = model.forward(input_features, labels=labels)
+        assert out.loss.ndim == 0
+
+    def test_loss_is_differentiable(self, model):
+        model.train()
+        B, W = 2, 50
+        input_features = make_input_features(B, W).requires_grad_(True)
+        labels = torch.randint(0, 11, (B, 10))
+        out = model.forward(input_features, labels=labels)
+        loss = out.loss
+        loss.backward()
+        assert input_features.grad is not None
+
+    def test_with_attention_mask(self, model):
+        B, W = 2, 50
+        input_features = make_input_features(B, W)
+        labels = torch.randint(0, 11, (B, 10))
         attention_mask = torch.ones(B, W, dtype=torch.long)
         with torch.no_grad():
             out = model.forward(input_features, labels=labels, attention_mask=attention_mask)
-        assert "logits" in out
-
-    def test_no_labels(self, model):
-        B, W = 2, 50
-        input_features = make_input_features(B, W)
-        attention_mask = torch.ones(B, W, dtype=torch.long)
-        with torch.no_grad():
-            out = model.forward(input_features, labels=None, attention_mask=attention_mask)
-        assert "logits" in out
+        assert isinstance(out, Seq2SeqLMOutput)
+        assert out.loss is not None
 
 
-class TestGenerateWithAttentionMask:
+class TestGenerate:
     def test_no_mask(self, model):
         B, W = 2, 50
         input_features = make_input_features(B, W)
         with torch.no_grad():
-            out = model.generate(input_features, max_length=5)
+            out = model.generate(input_features, max_length=5, eos_token=255)
         assert out.shape == (B, 5)
 
     def test_with_mask(self, model):
@@ -111,7 +135,7 @@ class TestGenerateWithAttentionMask:
         assert out.shape == (B, 5)
         assert torch.all(out >= 0) and torch.all(out < 11)
 
-    def test_mask_kwargs_passthrough(self, model):
+    def test_kwargs_passthrough(self, model):
         B, W = 2, 50
         input_features = make_input_features(B, W)
         attention_mask = torch.ones(B, W, dtype=torch.long)

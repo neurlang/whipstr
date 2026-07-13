@@ -8,12 +8,7 @@ sys.path.insert(0, '.')
 import torch
 from transformers import AutoModel, AutoConfig
 
-from whipstr.hf_integration import (
-    WhipstrConfig, 
-    WhipstrForConditionalGeneration,
-    WhipstrTokenizer,
-    WhipstrFeatureExtractor
-)
+from whipstr.hf_integration import WhipstrConfig, WhipstrForConditionalGeneration, WhipstrTokenizer, WhipstrFeatureExtractor
 AutoConfig.register("whipstr", WhipstrConfig)
 AutoModel.register(WhipstrConfig, WhipstrForConditionalGeneration)
 

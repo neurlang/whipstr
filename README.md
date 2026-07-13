@@ -8,31 +8,44 @@ A deep learning automatic speech recognition (ASR) system for transcribing speec
 
 ## Installation
 
+Core dependencies (required):
+
 ```bash
 pip install -r requirements.txt
+```
+
+Optional extras:
+
+```bash
+pip install whipstr[hf]      # Hugging Face integration (transformers, numpy, scipy, soundfile, sounddevice)
+pip install whipstr[train]   # Training (tqdm)
+pip install whipstr[dev]     # Development (hypothesis, pytest)
 ```
 
 ## Project Structure
 
 ```
 whipstr/                       # Core library package
-├── __init__.py                # Package exports (dataset, HF classes)
-├── hf_integration.py          # HuggingFace integration (config, tokenizer, feature extractor, model wrapper)
+├── __init__.py                # Package exports (dataset, native config)
+├── whipstr_config.py          # Native config dataclass (no HF dependency)
 ├── whipstr_encoder.py         # CNN audio encoder
 ├── whipstr_transformer.py     # Transformer seq-to-seq model
 ├── whipstr_train.py           # Training pipeline
 ├── whipstr_tsv_speech_dataset.py # TSV speech dataset loader
-└── whipstr_variants.py        # Model variant configs (small/base/medium/large)
+├── whipstr_variants.py        # Model variant configs (small/base/medium/large)
+└── hf_integration.py          # HuggingFace integration (requires whipstr[hf])
 
 scripts/
 ├── stt_example.py             # Training with variant support, checkpointing, WER eval
 ├── stt_evaluate.py            # Evaluate a checkpoint with WER
-└── stt_infer_hf.py            # Inference via HuggingFace Hub model
+├── stt_infer_hf.py            # Inference via HuggingFace Hub model
+└── stt_mic_hf.py              # Microphone-based inference via HF model
 
 tests/                         # Property-based and unit tests
 └── ...
 
-requirements.txt               # Dependencies
+pyproject.toml                 # Project metadata and optional dependencies
+requirements.txt               # Core dependencies
 ```
 
 ## Variants
@@ -64,8 +77,11 @@ python stt_infer_hf.py --audio audio.wav --model ./hf_whipstr
 Convert checkpoints to HF format and upload:
 
 ```bash
-uv run --with phase-spectrogram --with numpy --with torch --with scipy --with transformers \
-  python -m whipstr.hf_integration \
+# Install with HF extras first
+pip install whipstr[hf]
+
+# Then convert
+python -m whipstr.hf_integration \
   --checkpoint checkpoints/best_model.pt --model-json models/model.json
 ```
 

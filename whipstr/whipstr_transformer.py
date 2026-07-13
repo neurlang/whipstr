@@ -102,6 +102,54 @@ class WhipstrTransformer(nn.Module):
         # Output projection to vocabulary logits
         self.output_projection = nn.Linear(d_model, vocab_size)
     
+    def _encode(self, encoder_tokens, encoder_padding_mask=None):
+        """Encode encoder tokens into memory.
+
+        Args:
+            encoder_tokens: torch.Tensor [batch, T, input_values] from CNN encoder
+            encoder_padding_mask: optional torch.BoolTensor [batch, T] True=padding
+
+        Returns:
+            torch.Tensor [batch, T, d_model] memory
+        """
+        encoder_out = self.encoder_projection(encoder_tokens)
+        encoder_out = self.encoder_pos_encoding(encoder_out)
+        memory = self.transformer_encoder(
+            encoder_out,
+            src_key_padding_mask=encoder_padding_mask
+        )
+        return memory
+
+    def _decode(self, decoder_input_ids, memory, target_mask=None,
+                encoder_padding_mask=None, target_padding_mask=None):
+        """Decode using teacher forcing.
+
+        Args:
+            decoder_input_ids: torch.LongTensor [batch, N] token IDs
+            memory: torch.Tensor [batch, T, d_model] from _encode
+            target_mask: optional torch.Tensor [N, N] causal mask
+            encoder_padding_mask: optional torch.BoolTensor [batch, T]
+            target_padding_mask: optional torch.BoolTensor [batch, N]
+
+        Returns:
+            torch.Tensor [batch, N, vocab_size] logits
+        """
+        decoder_input = self.decoder_embedding(decoder_input_ids)
+        decoder_input = self.decoder_pos_encoding(decoder_input)
+
+        if target_mask is None:
+            tgt_len = decoder_input_ids.size(1)
+            target_mask = self._generate_square_subsequent_mask(tgt_len).to(decoder_input_ids.device)
+
+        decoder_out = self.transformer_decoder(
+            decoder_input, memory,
+            tgt_mask=target_mask,
+            memory_key_padding_mask=encoder_padding_mask,
+            tgt_key_padding_mask=target_padding_mask,
+        )
+
+        return self.output_projection(decoder_out)
+
     def forward(self, encoder_tokens, target_digits, target_mask=None, encoder_padding_mask=None, target_padding_mask=None):
         """Forward pass with teacher forcing.
         
@@ -161,35 +209,13 @@ class WhipstrTransformer(nn.Module):
             )
         
         try:
-            # Encoder path
-            encoder_out = self.encoder_projection(encoder_tokens)  # [batch, T, d_model]
-            encoder_out = self.encoder_pos_encoding(encoder_out)
-            encoder_memory = self.transformer_encoder(
-                encoder_out,
-                src_key_padding_mask=encoder_padding_mask
-            )  # [batch, T, d_model]
-            
-            # Decoder path
-            decoder_input = self.decoder_embedding(target_digits)  # [batch, N, d_model]
-            decoder_input = self.decoder_pos_encoding(decoder_input)
-            
-            # Create causal mask if not provided
-            if target_mask is None:
-                target_len = target_digits.size(1)
-                target_mask = self._generate_square_subsequent_mask(target_len).to(encoder_tokens.device)
-            
-            # Decode
-            decoder_out = self.transformer_decoder(
-                decoder_input,
-                encoder_memory,
-                tgt_mask=target_mask,
-                memory_key_padding_mask=encoder_padding_mask,
-                tgt_key_padding_mask=target_padding_mask
-            )  # [batch, N, d_model]
-            
-            # Project to vocabulary logits
-            logits = self.output_projection(decoder_out)  # [batch, N, vocab_size]
-            
+            memory = self._encode(encoder_tokens, encoder_padding_mask)
+            logits = self._decode(
+                target_digits, memory,
+                target_mask=target_mask,
+                encoder_padding_mask=encoder_padding_mask,
+                target_padding_mask=target_padding_mask,
+            )
             return logits
             
         except RuntimeError as e:
@@ -225,13 +251,7 @@ class WhipstrTransformer(nn.Module):
         if encoder_tokens.size(2) != self.input_values:
             raise ValueError(f"encoder_tokens must have self.input_values features, got {encoder_tokens.size(2)}")
         
-        # Encode once
-        encoder_out = self.encoder_projection(encoder_tokens)
-        encoder_out = self.encoder_pos_encoding(encoder_out)
-        encoder_memory = self.transformer_encoder(
-            encoder_out,
-            src_key_padding_mask=encoder_padding_mask
-        )
+        encoder_memory = self._encode(encoder_tokens, encoder_padding_mask)
         
         # Initialize with start token
         generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)

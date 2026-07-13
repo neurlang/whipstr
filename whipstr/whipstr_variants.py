@@ -15,7 +15,7 @@ Usage:
         print(f"{name}: {cfg['d_model']}d, {cfg['num_encoder_layers']}enc/{cfg['num_decoder_layers']}dec")
 """
 
-from .hf_integration import WhipstrConfig
+from .whipstr_config import WhipstrConfig
 
 
 VARIANT_CONFIGS = {
