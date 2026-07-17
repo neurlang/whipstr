@@ -44,7 +44,8 @@ def infer_from_mic(model_path, duration, sampling_rate, device=None, save_audio=
     input_features = extracted["input_features"]
 
     with torch.no_grad():
-        start_token_idx = config.vocab_size - 1
+        pad_id = 0
+        eos_id = config.vocab_size - 1
         actual_frames = input_features.shape[-1]
         estimated_chars = max(actual_frames // 4, 100)
 
@@ -53,15 +54,19 @@ def infer_from_mic(model_path, duration, sampling_rate, device=None, save_audio=
         predictions = model.transformer.generate(
             encoder_tokens,
             max_length=estimated_chars + 100,
-            start_token=start_token_idx
+            start_token=pad_id,
+            eos_token=eos_id,
         )
 
         predicted_indices = predictions[0].cpu().tolist()
 
+        if eos_id in predicted_indices:
+            predicted_indices = predicted_indices[:predicted_indices.index(eos_id)]
+
         predicted_text = ''.join(
             tokenizer.idx_to_char.get(idx, '?')
             for idx in predicted_indices
-            if 0 < idx < config.vocab_size
+            if 0 < idx < eos_id
         )
 
     return predicted_text
